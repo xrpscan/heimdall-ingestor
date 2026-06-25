@@ -1,0 +1,12 @@
+{
+  "httpServer": {
+    "addr": "localhost:9983",
+    "allowedOrigins": ["*"],
+    "corsMaxAgeSec": 86400
+  },
+  "logger": {
+    "filePath": "./logs/ingestor.log",
+    "level": "debug",
+    "pretty": true
+  }
+}
