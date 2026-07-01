@@ -15,6 +15,18 @@ type Config struct {
 		CorsMaxAgeSec int `json:"corsMaxAgeSec"`
 	} `json:"httpServer"`
 
+	Kafka struct {
+		Brokers          []string `json:"brokers"`
+		Username         string   `json:"username"`
+		Password         string   `json:"password"`
+		CACertPath       string   `json:"caCertPath"`
+		ValidationsTopic string   `json:"validationsTopic"`
+		ConsumerGroupID  string   `json:"consumerGroupID"`
+
+		MaxMessageRetryCount   int `json:"maxMessageRetryCount"`
+		MessageRetryIntervalMs int `json:"messageRetryIntervalMs"`
+	} `json:"kafka"`
+
 	Logger struct {
 		// Leave empty for stdout logging.
 		FilePath string `json:"filePath"`
@@ -52,6 +64,22 @@ func validate(conf Config) error {
 	}
 	if conf.HttpServer.CorsMaxAgeSec < 1 {
 		return fmt.Errorf("httpServer.corsMaxAgeSec is required")
+	}
+
+	if len(conf.Kafka.Brokers) == 0 {
+		return fmt.Errorf("kafka.brokers are required")
+	}
+	if conf.Kafka.ValidationsTopic == "" {
+		return fmt.Errorf("kafka.validationsTopic is required")
+	}
+	if conf.Kafka.ConsumerGroupID == "" {
+		return fmt.Errorf("kafka.consumerGroupID is required")
+	}
+	if conf.Kafka.MaxMessageRetryCount < 1 {
+		return fmt.Errorf("kafka.maxMessageRetryCount should be > 0")
+	}
+	if conf.Kafka.MessageRetryIntervalMs < 1 {
+		return fmt.Errorf("kafka.messageRetryIntervalMs should be > 0")
 	}
 
 	if conf.Logger.Level == "" {

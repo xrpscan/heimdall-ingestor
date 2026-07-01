@@ -4,6 +4,16 @@
     "allowedOrigins": ["*"],
     "corsMaxAgeSec": 86400
   },
+  "kafka": {
+    "brokers": ["localhost:19095", "localhost:29095", "localhost:39095"],
+    "username": "something",
+    "password": "secret",
+    "caCertPath": "/path/to/ca/cert",
+    "validationsTopic": "your-validations-topic",
+    "consumerGroupID": "something-group",
+    "maxMessageRetryCount": 100,
+    "messageRetryIntervalMs": 100
+  },
   "logger": {
     "filePath": "./logs/ingestor.log",
     "level": "debug",

@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/xrpscan/heimdall-ingestor/internal/config"
 	"github.com/xrpscan/heimdall-ingestor/internal/logger"
 	"github.com/xrpscan/heimdall-ingestor/internal/rest"
+	"github.com/xrpscan/heimdall-ingestor/pkg/kafkaesque"
 	"github.com/xrpscan/heimdall-ingestor/pkg/registry"
 )
 
@@ -48,6 +52,36 @@ func main() {
 	wd, _ := os.Getwd()
 	slog.InfoContext(ctx, "config file path", "path", *configPath, "wd", wd)
 
+	// Create Kafka Consumer.
+	kafkaConsumer, err := kafkaesque.NewFranzGoConsumer(ctx, kafkaesque.ConsumerParams{
+		Brokers:         conf.Kafka.Brokers,
+		Username:        conf.Kafka.Username,
+		Password:        conf.Kafka.Password,
+		CACertPath:      conf.Kafka.CACertPath,
+		Topic:           conf.Kafka.ValidationsTopic,
+		ConsumerGroupID: conf.Kafka.ConsumerGroupID,
+		Handler:         kafkaMessageHandler,
+		MaxRetryCount:   conf.Kafka.MaxMessageRetryCount,
+		RetryInterval:   time.Millisecond * time.Duration(conf.Kafka.MessageRetryIntervalMs),
+		Logger:          slog.Default(),
+	})
+
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to create kafka consumer", "error", err)
+		return
+	}
+
+	// Register Kafka Consumer for cleanup.
+	reg.Register("kafka-consumer", kafkaConsumer)
+	slog.InfoContext(ctx, "successfully connected to Kafka", "brokers", conf.Kafka.Brokers)
+
+	go func() {
+		defer cancel()
+		slog.InfoContext(ctx, "starting kafka consumer")
+
+		kafkaConsumer.ConsumeWithRetry(ctx)
+	}()
+
 	// Create http server and start listening.
 	setupHttpServer(ctx, cancel, conf, reg)
 
@@ -75,4 +109,16 @@ func setupHttpServer(
 			slog.ErrorContext(ctx, "error in ListenAndServe call", "error", err)
 		}
 	}()
+}
+
+// kafkaMessageHandler runs for every consumed Kafka message.
+func kafkaMessageHandler(ctx context.Context, record kafkaesque.Record) error {
+	var records []any
+	if err := json.Unmarshal(record.Payload, &records); err != nil {
+		fmt.Println("failed to unmarshal payload: ", err)
+		return err
+	} else {
+		fmt.Println("got batch with size:", len(records))
+		return nil
+	}
 }
