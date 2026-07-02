@@ -111,10 +111,6 @@ func (f *FranzGoConsumer) ConsumeWithRetry(ctx context.Context) {
 
 		// Log errors.
 		for _, e := range fetches.Errors() {
-			if e.Err == nil {
-				continue
-			}
-
 			log.ErrorContext(ctx, "error in PollFetches call",
 				"error", e.Err, "topic", e.Topic, "partition", e.Partition)
 
@@ -125,6 +121,7 @@ func (f *FranzGoConsumer) ConsumeWithRetry(ctx context.Context) {
 		}
 
 		fetches.EachRecord(func(r *kgo.Record) {
+			record := newRecord(r)
 			var succeeded bool
 
 			// Keep processing the same record until it succeeds.
@@ -136,7 +133,7 @@ func (f *FranzGoConsumer) ConsumeWithRetry(ctx context.Context) {
 				}
 
 				// Process record and set hasFailed to true on error.
-				if err := f.params.Handler(ctx, newRecord(r)); err != nil {
+				if err := f.params.Handler(ctx, record); err != nil {
 					log.ErrorContext(ctx, "failed to process record", "error", err, "count", i+1,
 						"topic", r.Topic, "partition", r.Partition, "offset", r.Offset)
 

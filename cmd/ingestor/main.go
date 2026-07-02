@@ -13,6 +13,7 @@ import (
 
 	"github.com/xrpscan/heimdall-ingestor/internal/config"
 	"github.com/xrpscan/heimdall-ingestor/internal/logger"
+	"github.com/xrpscan/heimdall-ingestor/internal/proc"
 	"github.com/xrpscan/heimdall-ingestor/internal/rest"
 	"github.com/xrpscan/heimdall-ingestor/pkg/kafkaesque"
 	"github.com/xrpscan/heimdall-ingestor/pkg/registry"
@@ -113,12 +114,14 @@ func setupHttpServer(
 
 // kafkaMessageHandler runs for every consumed Kafka message.
 func kafkaMessageHandler(ctx context.Context, record kafkaesque.Record) error {
-	var records []any
-	if err := json.Unmarshal(record.Payload, &records); err != nil {
-		fmt.Println("failed to unmarshal payload: ", err)
-		return err
-	} else {
-		fmt.Println("got batch with size:", len(records))
-		return nil
+	var batch []proc.MessageValidationReceived
+	if err := json.Unmarshal(record.Payload, &batch); err != nil {
+		return fmt.Errorf("failed to unmarshal record: %w", err)
 	}
+
+	if err := proc.ProcessMessageBatch(ctx, batch); err != nil {
+		return fmt.Errorf("failed to process record: %w", err)
+	}
+
+	return nil
 }
