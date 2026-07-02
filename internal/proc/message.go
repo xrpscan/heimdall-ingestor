@@ -34,5 +34,7 @@ func processOneMessage(ctx context.Context, message MessageValidationReceived) e
 	message.HeimUnixSigningTime = xrplEpochToUnixEpoch(message.SigningTime)
 
 	// TODO: Validator domain.
+
+	_ = message
 	return nil
 }
