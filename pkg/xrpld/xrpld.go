@@ -17,10 +17,11 @@ type Interface interface {
 
 // Client implements [Interface].
 type Client struct {
-	httpClient *http.Client
-
 	addr   string
 	logger Logger
+
+	httpClient     *http.Client
+	valDomainCache syncMap[string, ManifestDetails]
 }
 
 // NewClient returns a new instance of Client.
@@ -30,12 +31,31 @@ func NewClient(addr string, logger Logger) *Client {
 	}
 
 	httpClient := &http.Client{Timeout: 10 * time.Second}
-	return &Client{httpClient: httpClient, addr: addr, logger: logger}
+	return &Client{
+		addr:           addr,
+		logger:         logger,
+		httpClient:     httpClient,
+		valDomainCache: syncMap[string, ManifestDetails]{},
+	}
 }
 
+// GetManifest fetches a validator's manifest details from xrpld. Results are cached permanently,
+// so only the first call per key makes a network request. If multiple goroutines call GetManifest
+// for the same key before the first response is cached, each one will make its own network request
+// rather than waiting for and sharing a single result.
+//
+// See: https://xrpl.org/docs/references/http-websocket-apis/public-api-methods/server-info-methods/manifest
 func (c *Client) GetManifest(
 	ctx context.Context, validatorPublicKey string,
 ) (ManifestDetails, error) {
+	// Use cache if available.
+	value, ok := c.valDomainCache.get(validatorPublicKey)
+	if ok {
+		c.logger.DebugContext(ctx, "cache hit in GetManifest", "validator", validatorPublicKey)
+		return value, nil
+	}
+	c.logger.DebugContext(ctx, "cache miss in GetManifest", "validator", validatorPublicKey)
+
 	command := commandRequest{
 		Method: "manifest",
 		Params: []map[string]any{{"public_key": validatorPublicKey}},
@@ -92,6 +112,8 @@ func (c *Client) GetManifest(
 		return ManifestDetails{}, fmt.Errorf("failed to process response body: %w", err)
 	}
 
+	// Update cache. The command will never be invoked again for this validator.
+	c.valDomainCache.set(validatorPublicKey, result)
 	return result, nil
 }
 
