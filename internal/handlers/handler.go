@@ -5,24 +5,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 
+	"github.com/xrpscan/heimdall-ingestor/internal/store"
 	"github.com/xrpscan/heimdall-ingestor/pkg/kafkaesque"
 )
 
 // KafkaRecordHandler encapsulates methods required to handle/process Kafka records/messages.
-type KafkaRecordHandler struct{}
-
-// NewKafkaRecordHandler returns a new KafkaRecordHandler instance.
-func NewKafkaRecordHandler() KafkaRecordHandler {
-	return KafkaRecordHandler{}
+type KafkaRecordHandler struct {
+	db store.Client
 }
 
-// HandleValidationsMessageBatch processes a batch (or list) of xrpld's validationReceived messages.
-func (k KafkaRecordHandler) HandleValidationsMessageBatch(
+// NewKafkaRecordHandler returns a new KafkaRecordHandler instance.
+func NewKafkaRecordHandler(db store.Client) KafkaRecordHandler {
+	return KafkaRecordHandler{db: db}
+}
+
+// HandleValidationMessageBatch processes a batch (or list) of xrpld's validationReceived messages.
+func (k KafkaRecordHandler) HandleValidationMessageBatch(
 	ctx context.Context, record kafkaesque.Record,
 ) error {
 	// Unmarshal to processable type.
-	var batch []MessageValidationReceived
+	var batch []store.ValidationMessagePayload
 	if err := json.Unmarshal(record.Payload, &batch); err != nil {
 		return fmt.Errorf("failed to unmarshal record: %w", err)
 	}
@@ -36,30 +40,48 @@ func (k KafkaRecordHandler) HandleValidationsMessageBatch(
 		return nil
 	}
 
-	// Process each message. No errors must be swallowed here.
-	for _, message := range filteredBatch {
-		if err := k.handleValidationsMessage(ctx, message); err != nil {
-			return fmt.Errorf("failed to process message: %w", err)
+	// This will be used for the batch insertion.
+	persistable := make([]store.ValidationMessage, len(filteredBatch))
+
+	// Make messages ready for persistence. No errors must be swallowed here.
+	for i, message := range filteredBatch {
+		enriched, err := k.enrichValidationMessage(message)
+		if err != nil {
+			return fmt.Errorf("failed to enrich message: %w", err)
 		}
+		persistable[i] = enriched
 	}
 
+	// TODO: Store in DB.
 	return nil
 }
 
-// handleValidationsMessage processes a single validationReceived message.
-//
-// It is idempotent as Ingestor is designed to handle duplicate messages.
-func (k KafkaRecordHandler) handleValidationsMessage(
-	ctx context.Context, message MessageValidationReceived,
-) error {
+// enrichValidationMessage enriches the given validationReceived message by assigning required
+// fields. It is idempotent as Ingestor is designed to handle duplicate messages.
+func (k KafkaRecordHandler) enrichValidationMessage(
+	message store.ValidationMessagePayload,
+) (store.ValidationMessage, error) {
 	// If master key is absent, the validation public key can be assumed to be the master key.
+	masterKey := message.MasterKey
 	if message.MasterKey == "" {
-		message.MasterKey = message.ValidationPublicKey
+		masterKey = message.ValidationPublicKey
 	}
 
-	// signing_time is in XRPL epoch format.
-	message.HeimTimestamp = xrplEpochToUnixEpoch(message.SigningTime)
+	// This is already validated so no need to handle error.
+	li, _ := strconv.ParseUint(message.LedgerIndex, 10, 64)
+	// SigningTime is in seconds but database expects milliseconds.
+	unixSigningTimeMs := xrplEpochToUnixEpoch(message.SigningTime) * 1000
 
-	// TODO: Store in database.
-	return nil
+	// Payload byte slice.
+	messageBytes, err := json.Marshal(message)
+	if err != nil {
+		return store.ValidationMessage{}, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	return store.ValidationMessage{
+		MasterKey:     masterKey,
+		LedgerIndex:   int64(li),
+		Payload:       messageBytes,
+		HeimTimestamp: store.Timestamp(unixSigningTimeMs),
+	}, nil
 }

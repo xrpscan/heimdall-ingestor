@@ -3,13 +3,15 @@ package handlers
 import (
 	"context"
 	"log/slog"
+
+	"github.com/xrpscan/heimdall-ingestor/internal/store"
 )
 
 // xrplEpochToUnixEpoch converts XPRL epoch time (January 1, 2000)
 // to Unix epoch time (January 1, 1970).
-func xrplEpochToUnixEpoch(xrplEpoch uint64) uint64 {
+func xrplEpochToUnixEpoch(xrplEpoch uint64) int64 {
 	const offset = 946684800
-	return xrplEpoch + offset
+	return int64(xrplEpoch) + offset
 }
 
 // filterValidationMessages validates each message in the given batch and returns a slice of only
@@ -17,13 +19,13 @@ func xrplEpochToUnixEpoch(xrplEpoch uint64) uint64 {
 //
 // It accepts context only for context-aware logging.
 func filterValidationMessages(
-	ctx context.Context, batch []MessageValidationReceived,
-) []MessageValidationReceived {
-	filteredBatch := make([]MessageValidationReceived, 0, len(batch))
+	ctx context.Context, batch []store.ValidationMessagePayload,
+) []store.ValidationMessagePayload {
+	filteredBatch := make([]store.ValidationMessagePayload, 0, len(batch))
 
 	// Filter out the invalid messages from the batch.
 	for _, msg := range batch {
-		if err := checkValidationsReceivedMessage(msg); err != nil {
+		if err := checkValidationReceivedMessage(msg); err != nil {
 			slog.ErrorContext(ctx, "validationReceived message is invalid", "error", err)
 		} else {
 			filteredBatch = append(filteredBatch, msg)

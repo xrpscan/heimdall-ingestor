@@ -1,13 +1,22 @@
-package handlers
+package store
 
-// MessageValidationReceived is the schema of a message received from the Kafka validations topic.
+// ValidationMessage represents a single row of the validations table.
+type ValidationMessage struct {
+	ID int64 `json:"id"`
+
+	MasterKey   string `json:"master_key"`
+	LedgerIndex int64  `json:"ledger_index"`
+	Payload     []byte `json:"payload"`
+
+	HeimTimestamp Timestamp `json:"heim_timestamp"`
+	CreatedAt     Timestamp `json:"created_at"`
+}
+
+// ValidationMessagePayload is the schema of a message received from the Kafka validations topic.
 // See: https://xrpl.org/docs/references/http-websocket-apis/public-api-methods/subscription-methods/subscribe#validations-stream
 //
 // All field prefixed with "Heim" are custom fields and have nothing to do with the xrpl schema.
-type MessageValidationReceived struct {
-	// HeimTimestamp is just the SigningTime converted to unix epoch format.
-	HeimTimestamp uint64 `json:"-"`
-
+type ValidationMessagePayload struct {
 	// The value validationReceived indicates this is from the validations stream.
 	Type string `json:"type"`
 	// (May be omitted) The amendments this server wants to be added to the protocol.

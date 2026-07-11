@@ -3,10 +3,12 @@ package handlers
 import (
 	"fmt"
 	"strconv"
+
+	"github.com/xrpscan/heimdall-ingestor/internal/store"
 )
 
-// checkValidationsReceivedMessage returns an error if the given message is invalid.
-func checkValidationsReceivedMessage(message MessageValidationReceived) error {
+// checkValidationReceivedMessage returns an error if the given message is invalid.
+func checkValidationReceivedMessage(message store.ValidationMessagePayload) error {
 	if message.MasterKey == "" && message.ValidationPublicKey == "" {
 		return fmt.Errorf("both master_key and validation_public_key are empty")
 	}

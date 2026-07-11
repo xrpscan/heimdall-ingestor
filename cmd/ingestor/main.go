@@ -52,7 +52,7 @@ func main() {
 	slog.InfoContext(ctx, "config file path", "path", *configPath, "wd", wd)
 
 	// Handler abstraction for all Kafka messages.
-	kafkaHandler := handlers.NewKafkaRecordHandler()
+	kafkaHandler := handlers.NewKafkaRecordHandler(nil /* TODO */)
 
 	// Create Kafka Consumer.
 	kafkaConsumer, err := kafkaesque.NewFranzGoConsumer(ctx, kafkaesque.ConsumerParams{
@@ -62,7 +62,7 @@ func main() {
 		CACertPath:      conf.Kafka.CACertPath,
 		Topic:           conf.Kafka.ValidationsTopic,
 		ConsumerGroupID: conf.Kafka.ConsumerGroupID,
-		Handler:         kafkaHandler.HandleValidationsMessageBatch,
+		Handler:         kafkaHandler.HandleValidationMessageBatch,
 		MaxRetryCount:   conf.Kafka.MaxMessageRetryCount,
 		RetryInterval:   time.Millisecond * time.Duration(conf.Kafka.MessageRetryIntervalMs),
 		Logger:          slog.Default(),
