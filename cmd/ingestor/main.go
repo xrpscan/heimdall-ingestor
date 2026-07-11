@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
-	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -12,8 +10,8 @@ import (
 	"time"
 
 	"github.com/xrpscan/heimdall-ingestor/internal/config"
+	"github.com/xrpscan/heimdall-ingestor/internal/handlers"
 	"github.com/xrpscan/heimdall-ingestor/internal/logger"
-	"github.com/xrpscan/heimdall-ingestor/internal/proc"
 	"github.com/xrpscan/heimdall-ingestor/internal/rest"
 	"github.com/xrpscan/heimdall-ingestor/pkg/kafkaesque"
 	"github.com/xrpscan/heimdall-ingestor/pkg/registry"
@@ -53,6 +51,9 @@ func main() {
 	wd, _ := os.Getwd()
 	slog.InfoContext(ctx, "config file path", "path", *configPath, "wd", wd)
 
+	// Handler abstraction for all Kafka messages.
+	kafkaHandler := handlers.NewKafkaRecordHandler()
+
 	// Create Kafka Consumer.
 	kafkaConsumer, err := kafkaesque.NewFranzGoConsumer(ctx, kafkaesque.ConsumerParams{
 		Brokers:         conf.Kafka.Brokers,
@@ -61,7 +62,7 @@ func main() {
 		CACertPath:      conf.Kafka.CACertPath,
 		Topic:           conf.Kafka.ValidationsTopic,
 		ConsumerGroupID: conf.Kafka.ConsumerGroupID,
-		Handler:         kafkaMessageHandler,
+		Handler:         kafkaHandler.HandleValidationsMessageBatch,
 		MaxRetryCount:   conf.Kafka.MaxMessageRetryCount,
 		RetryInterval:   time.Millisecond * time.Duration(conf.Kafka.MessageRetryIntervalMs),
 		Logger:          slog.Default(),
@@ -76,10 +77,10 @@ func main() {
 	reg.Register("kafka-consumer", kafkaConsumer)
 	slog.InfoContext(ctx, "successfully connected to Kafka", "brokers", conf.Kafka.Brokers)
 
+	// Start Kafka consumer without blocking the main thread.
 	go func() {
 		defer cancel()
 		slog.InfoContext(ctx, "starting kafka consumer")
-
 		kafkaConsumer.ConsumeWithRetry(ctx)
 	}()
 
@@ -110,18 +111,4 @@ func setupHttpServer(
 			slog.ErrorContext(ctx, "error in ListenAndServe call", "error", err)
 		}
 	}()
-}
-
-// kafkaMessageHandler runs for every consumed Kafka message.
-func kafkaMessageHandler(ctx context.Context, record kafkaesque.Record) error {
-	var batch []proc.MessageValidationReceived
-	if err := json.Unmarshal(record.Payload, &batch); err != nil {
-		return fmt.Errorf("failed to unmarshal record: %w", err)
-	}
-
-	if err := proc.ProcessMessageBatch(ctx, batch); err != nil {
-		return fmt.Errorf("failed to process record: %w", err)
-	}
-
-	return nil
 }

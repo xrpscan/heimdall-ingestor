@@ -1,9 +1,12 @@
-package proc
+package handlers
 
 // MessageValidationReceived is the schema of a message received from the Kafka validations topic.
 // See: https://xrpl.org/docs/references/http-websocket-apis/public-api-methods/subscription-methods/subscribe#validations-stream
+//
+// All field prefixed with "Heim" are custom fields and have nothing to do with the xrpl schema.
 type MessageValidationReceived struct {
-	HeimUnixSigningTime uint64 `json:"-"`
+	// HeimTimestamp is just the SigningTime converted to unix epoch format.
+	HeimTimestamp uint64 `json:"-"`
 
 	// The value validationReceived indicates this is from the validations stream.
 	Type string `json:"type"`
