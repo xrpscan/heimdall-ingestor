@@ -1,5 +1,3 @@
-BEGIN;
-
 CREATE TABLE validations (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
@@ -12,5 +10,3 @@ CREATE TABLE validations (
 
     UNIQUE (master_key, ledger_index)
 );
-
-COMMIT;
