@@ -1,4 +1,10 @@
 {
+  "database": {
+    "addr": "localhost:5432",
+    "username": "postgres",
+    "password": "dev",
+    "database": "heimdall"
+  },
   "httpServer": {
     "addr": "localhost:9983",
     "allowedOrigins": ["*"],

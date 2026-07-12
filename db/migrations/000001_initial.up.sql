@@ -8,7 +8,9 @@ CREATE TABLE validations (
     payload         JSONB NOT NULL,
 
     heim_timestamp  TIMESTAMP WITH TIME ZONE NOT NULL,
-    created_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at      TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE (master_key, ledger_index)
 );
 
 COMMIT;

@@ -52,7 +52,11 @@ func (k KafkaRecordHandler) HandleValidationMessageBatch(
 		persistable[i] = enriched
 	}
 
-	// TODO: Store in DB.
+	// Store in database.
+	if err := k.db.InsertValidationMessagesIfNotExist(ctx, persistable); err != nil {
+		return fmt.Errorf("failed to persist batch: %w", err)
+	}
+
 	return nil
 }
 

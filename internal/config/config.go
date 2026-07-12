@@ -8,6 +8,13 @@ import (
 
 // Config encapsulates all config required by the application.
 type Config struct {
+	Database struct {
+		Addr     string `json:"addr"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Database string `json:"database"`
+	} `json:"database"`
+
 	HttpServer struct {
 		Addr           string   `json:"addr"`
 		AllowedOrigins []string `json:"allowedOrigins"`
@@ -56,6 +63,19 @@ func Load(jsonPath string) (Config, error) {
 
 // validate the loaded config.
 func validate(conf Config) error {
+	if conf.Database.Addr == "" {
+		return fmt.Errorf("database.addr is required")
+	}
+	if conf.Database.Username == "" {
+		return fmt.Errorf("database.username is required")
+	}
+	if conf.Database.Password == "" {
+		return fmt.Errorf("database.password is required")
+	}
+	if conf.Database.Database == "" {
+		return fmt.Errorf("database.database is required")
+	}
+
 	if conf.HttpServer.Addr == "" {
 		return fmt.Errorf("httpServer.addr is required")
 	}

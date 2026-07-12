@@ -13,6 +13,7 @@ import (
 	"github.com/xrpscan/heimdall-ingestor/internal/handlers"
 	"github.com/xrpscan/heimdall-ingestor/internal/logger"
 	"github.com/xrpscan/heimdall-ingestor/internal/rest"
+	"github.com/xrpscan/heimdall-ingestor/internal/store"
 	"github.com/xrpscan/heimdall-ingestor/pkg/kafkaesque"
 	"github.com/xrpscan/heimdall-ingestor/pkg/registry"
 )
@@ -51,8 +52,26 @@ func main() {
 	wd, _ := os.Getwd()
 	slog.InfoContext(ctx, "config file path", "path", *configPath, "wd", wd)
 
+	// Connect to the database.
+	database, err := store.NewPostgresClient(ctx, conf.Database.Addr, conf.Database.Username,
+		conf.Database.Password, conf.Database.Database)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to connect to database", "error", err)
+		return
+	}
+
+	// Register database for cleanup.
+	reg.Register("database", database)
+	slog.InfoContext(ctx, "successfully connected to the database", "addr", conf.Database.Addr)
+
+	// Automatically run migrations.
+	if err := database.RunMigrations(ctx, "file://db/migrations"); err != nil {
+		slog.ErrorContext(ctx, "failed to run migrations", "error", err)
+		return
+	}
+
 	// Handler abstraction for all Kafka messages.
-	kafkaHandler := handlers.NewKafkaRecordHandler(nil /* TODO */)
+	kafkaHandler := handlers.NewKafkaRecordHandler(database)
 
 	// Create Kafka Consumer.
 	kafkaConsumer, err := kafkaesque.NewFranzGoConsumer(ctx, kafkaesque.ConsumerParams{

@@ -4,12 +4,12 @@ package store
 type ValidationMessage struct {
 	ID int64 `json:"id"`
 
-	MasterKey   string `json:"master_key"`
-	LedgerIndex int64  `json:"ledger_index"`
-	Payload     []byte `json:"payload"`
-
+	MasterKey     string    `json:"master_key"`
+	LedgerIndex   int64     `json:"ledger_index"`
+	Payload       []byte    `json:"payload"`
 	HeimTimestamp Timestamp `json:"heim_timestamp"`
-	CreatedAt     Timestamp `json:"created_at"`
+
+	CreatedAt Timestamp `json:"created_at"`
 }
 
 // ValidationMessagePayload is the schema of a message received from the Kafka validations topic.
