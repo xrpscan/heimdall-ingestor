@@ -147,7 +147,7 @@ func (f *FranzGoConsumer) ConsumeWithRetry(ctx context.Context) {
 				}
 
 				// Record processing was successful. Move to next record.
-				log.DebugContext(ctx, "successfully processed kafka record",
+				log.InfoContext(ctx, "successfully processed kafka record",
 					"topic", r.Topic, "partition", r.Partition, "offset", r.Offset)
 				succeeded = true
 				break

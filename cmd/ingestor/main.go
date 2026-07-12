@@ -66,8 +66,10 @@ func main() {
 
 	// Automatically run migrations.
 	if err := database.RunMigrations(ctx, "file://db/migrations"); err != nil {
-		slog.ErrorContext(ctx, "failed to run migrations", "error", err)
+		slog.ErrorContext(ctx, "failed to run database migrations", "error", err)
 		return
+	} else {
+		slog.InfoContext(ctx, "successfully ran database migrations")
 	}
 
 	// Handler abstraction for all Kafka messages.
