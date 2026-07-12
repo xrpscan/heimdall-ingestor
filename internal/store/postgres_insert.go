@@ -8,29 +8,33 @@ import (
 
 func (p *PostgresClient) InsertValidationMessagesIfNotExist(
 	ctx context.Context, messages []ValidationMessage,
-) error {
+) (int64, error) {
+	if len(messages) == 0 {
+		return 0, nil
+	}
+
 	// Form query.
 	query, args := p.queryInsertValidationMessagesIfNotExist(messages)
 
 	// Execute query.
 	result, err := p.db.ExecContext(ctx, query, args...)
 	if err != nil {
-		return fmt.Errorf("error in query execution: %w", err)
+		return 0, fmt.Errorf("error in query execution: %w", err)
 	}
 
 	count, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("failed to obtain affected row count: %w", err)
+		return 0, fmt.Errorf("failed to obtain affected row count: %w", err)
 	}
 
 	// Verify that affected row count does not exceed the message count.
 	// It can be less than the message count as duplicates are skipped.
 	if int(count) > len(messages) {
-		return fmt.Errorf("unexpected number of rows were inserted: %d, expected <= %d",
+		return count, fmt.Errorf("unexpected number of rows were inserted: %d, expected <= %d",
 			count, len(messages))
 	}
 
-	return nil
+	return count, nil
 }
 
 func (p *PostgresClient) queryInsertValidationMessagesIfNotExist(

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -23,11 +24,17 @@ type PostgresClient struct {
 func NewPostgresClient(
 	ctx context.Context, addr, username, password, databaseName string,
 ) (*PostgresClient, error) {
-	dsn := fmt.Sprintf("postgresql://%s:%s@%s/%s?sslmode=disable",
-		username, password, addr, databaseName)
+	// Form the DSN safely.
+	dsn := &url.URL{
+		Scheme:   "postgresql",
+		User:     url.UserPassword(username, password),
+		Host:     addr,
+		Path:     databaseName,
+		RawQuery: "sslmode=disable",
+	}
 
 	// Connect to database.
-	db, err := sql.Open("pgx", dsn)
+	db, err := sql.Open("pgx", dsn.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect database: %w", err)
 	}
@@ -60,7 +67,7 @@ func (p *PostgresClient) RunMigrations(ctx context.Context, path string) error {
 	// Run migrations.
 	if err := migrationClient.Up(); err != nil {
 		if errors.Is(err, migrate.ErrNoChange) {
-			slog.InfoContext(ctx, "no migrations to run")
+			slog.InfoContext(ctx, "no database migrations to run")
 			return nil
 		}
 		return fmt.Errorf("failed to run migrations: %w", err)

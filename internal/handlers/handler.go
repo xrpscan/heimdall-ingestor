@@ -31,6 +31,7 @@ func (k KafkaRecordHandler) HandleValidationMessageBatch(
 		return fmt.Errorf("failed to unmarshal record: %w", err)
 	}
 
+	slog.InfoContext(ctx, "new validationRecieved message batch from kafka", "size", len(batch))
 	// Filter out the invalid messages.
 	filteredBatch := filterValidationMessages(ctx, batch)
 
@@ -53,10 +54,13 @@ func (k KafkaRecordHandler) HandleValidationMessageBatch(
 	}
 
 	// Store in database.
-	if err := k.db.InsertValidationMessagesIfNotExist(ctx, persistable); err != nil {
+	insertedCount, err := k.db.InsertValidationMessagesIfNotExist(ctx, persistable)
+	if err != nil {
 		return fmt.Errorf("failed to persist batch: %w", err)
 	}
 
+	slog.InfoContext(ctx, "successfully inserted the batch in the database",
+		"insertedCount", insertedCount, "totalCount", len(filteredBatch))
 	return nil
 }
 
