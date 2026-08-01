@@ -1,9 +1,10 @@
 CREATE TABLE validations (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
-    master_key      TEXT NOT NULL,
-    ledger_index    BIGINT NOT NULL,
-    payload         JSONB NOT NULL,
+    master_key      TEXT    NOT NULL,
+    ledger_index    BIGINT  NOT NULL,
+    ledger_hash     TEXT    NOT NULL,
+    payload         JSONB   NOT NULL,
 
     unix_signing_time   TIMESTAMP WITH TIME ZONE NOT NULL,
     observer_created_at TIMESTAMP WITH TIME ZONE NOT NULL,

@@ -74,19 +74,20 @@ func (p *PostgresClient) queryInsertValidationMessagesIfNotExist(
 	// Number of columns for each row in the query.
 	// This may not be equal to the actual number of columns in the table,
 	// since id and created_at are not inserted.
-	const columnCount = 5
+	const columnCount = 6
 	// Create size as per total argument count.
 	args := make([]any, len(messages)*columnCount)
 
 	var valueBuilder strings.Builder
-	valueBuilder.Grow(len(messages) * 25) // Reasonable buffer pre-allocation.
+	valueBuilder.Grow(len(messages) * 30) // Reasonable buffer pre-allocation.
 
 	for i := 0; i < len(messages)*columnCount; i += columnCount {
-		fmt.Fprintf(&valueBuilder, `($%d, $%d, $%d, $%d, $%d), `, i+1, i+2, i+3, i+4, i+5)
+		fmt.Fprintf(&valueBuilder, `($%d, $%d, $%d, $%d, $%d, $%d), `, i+1, i+2, i+3, i+4, i+5, i+6)
 
 		// Populate arguments.
 		item := messages[i/columnCount]
-		args[i], args[i+1], args[i+2], args[i+3], args[i+4] = item.MasterKey, item.LedgerIndex,
+		args[i], args[i+1], args[i+2], args[i+3], args[i+4], args[i+5] =
+			item.MasterKey, item.LedgerIndex, item.LedgerHash,
 			item.Payload, item.UnixSigningTime, item.ObserverCreatedAt
 	}
 
@@ -94,7 +95,7 @@ func (p *PostgresClient) queryInsertValidationMessagesIfNotExist(
 	values := strings.TrimSuffix(valueBuilder.String(), ", ")
 	return `INSERT INTO
 	validations
-		(master_key, ledger_index, payload, unix_signing_time, observer_created_at)
+		(master_key, ledger_index, ledger_hash, payload, unix_signing_time, observer_created_at)
 	VALUES ` + values + `
 	ON CONFLICT (master_key, ledger_index) DO NOTHING;`, args
 }

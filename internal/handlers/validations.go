@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"strconv"
 )
 
 // checkValidationBatchItem returns an error if the given validation batch item is invalid.
@@ -13,12 +12,17 @@ func checkValidationBatchItem(item validationBatchItem) error {
 		return fmt.Errorf("both master_key and validation_public_key are empty")
 	}
 
-	if message.LedgerIndex == "" {
-		return fmt.Errorf("ledger_index is empty")
+	// Verify ledger_index.
+	parsed, err := message.LedgerIndexParsed()
+	if err != nil {
+		return fmt.Errorf("ledger_index is invalid: %w", err)
+	}
+	if parsed <= 0 {
+		return fmt.Errorf("ledger_index must be positive, got: %d", parsed)
 	}
 
-	if _, err := strconv.ParseUint(message.LedgerIndex, 10, 64); err != nil {
-		return fmt.Errorf("ledger_index is not a positive int '%s': %w", message.LedgerIndex, err)
+	if message.LedgerHash == "" {
+		return fmt.Errorf("ledger_hash is empty")
 	}
 
 	if item.CreatedAt < 1_000_000_000_000 {

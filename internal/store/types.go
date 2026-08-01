@@ -11,6 +11,7 @@ type ValidationMessage struct {
 
 	MasterKey   string
 	LedgerIndex int64
+	LedgerHash  string
 	Payload     []byte
 
 	UnixSigningTime   Timestamp
@@ -77,6 +78,14 @@ type ValidationMessagePayload struct {
 	ValidationPublicKey string `json:"validation_public_key"`
 }
 
+func (v ValidationMessagePayload) LedgerIndexParsed() (int64, error) {
+	parsed, err := strconv.ParseUint(v.LedgerIndex, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid or negative number: %s", v.LedgerIndex)
+	}
+	return int64(parsed), nil
+}
+
 // LedgerMessage represents a single row of the ledger table.
 type LedgerMessage struct {
 	ID int64
@@ -136,9 +145,9 @@ func (l LedgerMessagePayload) LedgerIndexParsed() (int64, error) {
 	case float64:
 		return int64(x), nil
 	case string:
-		parsed, err := strconv.ParseInt(x, 10, 64)
+		parsed, err := strconv.ParseUint(x, 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("invalid number: %s", x)
+			return 0, fmt.Errorf("invalid or negative number: %s", x)
 		}
 		return int64(parsed), nil
 	default:
