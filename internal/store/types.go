@@ -136,7 +136,7 @@ func (l LedgerMessagePayload) LedgerIndexParsed() (int64, error) {
 	case float64:
 		return int64(x), nil
 	case string:
-		parsed, err := strconv.Atoi(x)
+		parsed, err := strconv.ParseInt(x, 10, 64)
 		if err != nil {
 			return 0, fmt.Errorf("invalid number: %s", x)
 		}

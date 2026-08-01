@@ -16,6 +16,7 @@
     "password": "secret",
     "caCertPath": "/path/to/ca/cert",
     "validationsTopic": "your-validations-topic",
+    "ledgerTopic": "your-ledger-topic",
     "consumerGroupID": "something-group",
     "maxMessageRetryCount": 100,
     "messageRetryIntervalMs": 100

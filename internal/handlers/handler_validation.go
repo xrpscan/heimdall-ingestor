@@ -10,13 +10,15 @@ import (
 	"github.com/xrpscan/heimdall-ingestor/internal/store"
 )
 
+// handleValidationMessageBatch processes a Kafka message payload coming from the validations topic.
 func (k KafkaRecordHandler) handleValidationMessageBatch(
 	ctx context.Context, batch []validationBatchItem,
 ) error {
 	// The validation layer.
-	filteredBatch := filterValidationBatch(ctx, batch)
+	filteredBatch := filterBatch(ctx, batch, checkValidationBatchItem)
 
 	// If all messages were invalid, return early.
+	// TODO: Upper limit on batch size? 5000?
 	if len(filteredBatch) == 0 {
 		slog.WarnContext(ctx, "no valid messages in the batch")
 		return nil

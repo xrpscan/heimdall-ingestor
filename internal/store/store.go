@@ -9,4 +9,10 @@ type Client interface {
 	InsertValidationMessagesIfNotExist(
 		ctx context.Context, messages []ValidationMessage,
 	) (int64, error)
+
+	// InsertLedgerMessagesIfNotExist inserts multiple entries in the ledger table.
+	// If any of the given messages already exist in the table, they are skipped without errors.
+	InsertLedgerMessagesIfNotExist(
+		ctx context.Context, messages []LedgerMessage,
+	) (int64, error)
 }

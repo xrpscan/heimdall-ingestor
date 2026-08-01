@@ -29,7 +29,38 @@ func (p *PostgresClient) InsertValidationMessagesIfNotExist(
 
 	// Verify that affected row count does not exceed the message count.
 	// It can be less than the message count as duplicates are skipped.
-	if int(count) > len(messages) {
+	if count > int64(len(messages)) {
+		return count, fmt.Errorf("unexpected number of rows were inserted: %d, expected <= %d",
+			count, len(messages))
+	}
+
+	return count, nil
+}
+
+func (p *PostgresClient) InsertLedgerMessagesIfNotExist(
+	ctx context.Context, messages []LedgerMessage,
+) (int64, error) {
+	if len(messages) == 0 {
+		return 0, nil
+	}
+
+	// Form query.
+	query, args := p.queryInsertLedgerMessagesIfNotExist(messages)
+	// Execute query.
+	result, err := p.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, fmt.Errorf("error in query execution: %w", err)
+	}
+
+	// We should verify the number of rows affected to report unexpected behaviours.
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to obtain affected row count: %w", err)
+	}
+
+	// Verify that affected row count does not exceed the message count.
+	// It can be less than the message count as duplicates are skipped.
+	if count > int64(len(messages)) {
 		return count, fmt.Errorf("unexpected number of rows were inserted: %d, expected <= %d",
 			count, len(messages))
 	}

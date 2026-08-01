@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/xrpscan/heimdall-ingestor/internal/logger"
 	"github.com/xrpscan/heimdall-ingestor/internal/store"
 	"github.com/xrpscan/heimdall-ingestor/pkg/kafkaesque"
 )
@@ -26,8 +27,8 @@ func NewKafkaRecordHandler(db store.Client, validnTopic, ledgerTopic string) Kaf
 func (k KafkaRecordHandler) HandleBatch(
 	ctx context.Context, topic string, record kafkaesque.Record,
 ) error {
-	clog := slog.With("topic", topic)
-	clog.InfoContext(ctx, "new batch from kafka arrived")
+	ctx = logger.AddContextValue(ctx, "topic", topic)
+	slog.InfoContext(ctx, "new batch from kafka arrived")
 
 	switch topic {
 	case k.validnTopic:

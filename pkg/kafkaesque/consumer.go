@@ -137,6 +137,11 @@ func (f *FranzGoConsumer) ConsumeWithRetry(ctx context.Context) {
 					log.ErrorContext(ctx, "failed to process record", "error", err, "count", i+1,
 						"topic", r.Topic, "partition", r.Partition, "offset", r.Offset)
 
+					// Don't wait for the next retry if this is the last iteration.
+					if i == f.params.MaxRetryCount-1 {
+						break
+					}
+
 					// Record processing failed. Wait while respecting context and reprocess.
 					select {
 					case <-time.After(f.params.RetryInterval):

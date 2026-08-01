@@ -12,25 +12,25 @@ func xrplEpochToUnixEpoch(xrplEpoch uint64) int64 {
 	return int64(xrplEpoch) + offset
 }
 
-// filterValidationBatch validates each item in the given batch and returns a slice of only
-// the valid items.
+// filterBatch validates each item in the given batch using the given function
+// and returns a slice of only the valid items.
 //
 // It accepts context only for context-aware logging.
-func filterValidationBatch(
-	ctx context.Context, batch []validationBatchItem,
-) []validationBatchItem {
-	filteredBatch := make([]validationBatchItem, 0, len(batch))
+func filterBatch[T any](
+	ctx context.Context, batch []T, validator func(T) error,
+) []T {
+	filteredBatch := make([]T, 0, len(batch))
 
 	// Filter out the invalid items from the batch.
 	for _, item := range batch {
-		if err := checkValidationBatchItem(item); err != nil {
-			slog.ErrorContext(ctx, "validation batch item message is invalid", "error", err)
+		if err := validator(item); err != nil {
+			slog.ErrorContext(ctx, "batch item message is invalid", "error", err)
 		} else {
 			filteredBatch = append(filteredBatch, item)
 		}
 	}
 
-	slog.InfoContext(ctx, "validation check complete for validation batch item",
+	slog.InfoContext(ctx, "filtration complete for batch",
 		"valid", len(filteredBatch), "invalid", len(batch)-len(filteredBatch))
 
 	return filteredBatch
