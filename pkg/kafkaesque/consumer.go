@@ -28,7 +28,7 @@ type ConsumerParams struct {
 	Password   string
 	CACertPath string
 
-	Topic           string
+	Topics          []string
 	ConsumerGroupID string
 	Handler         RecordHandlerFunc
 
@@ -49,7 +49,7 @@ func NewFranzGoConsumer(ctx context.Context, params ConsumerParams) (*FranzGoCon
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(params.Brokers...),
 		kgo.ConsumerGroup(params.ConsumerGroupID),
-		kgo.ConsumeTopics(params.Topic),
+		kgo.ConsumeTopics(params.Topics...),
 		// If Kafka finds no offsets for this consumer group, it will be reset to the start.
 		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
 		// Autocommit only the explicitly marked records.
@@ -133,7 +133,7 @@ func (f *FranzGoConsumer) ConsumeWithRetry(ctx context.Context) {
 				}
 
 				// Process record and set hasFailed to true on error.
-				if err := f.params.Handler(ctx, record); err != nil {
+				if err := f.params.Handler(ctx, r.Topic, record); err != nil {
 					log.ErrorContext(ctx, "failed to process record", "error", err, "count", i+1,
 						"topic", r.Topic, "partition", r.Partition, "offset", r.Offset)
 

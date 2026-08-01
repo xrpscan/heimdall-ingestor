@@ -28,6 +28,7 @@ type Config struct {
 		Password         string   `json:"password"`
 		CACertPath       string   `json:"caCertPath"`
 		ValidationsTopic string   `json:"validationsTopic"`
+		LedgerTopic      string   `json:"ledgerTopic"`
 		ConsumerGroupID  string   `json:"consumerGroupID"`
 
 		MaxMessageRetryCount   int `json:"maxMessageRetryCount"`
@@ -91,6 +92,9 @@ func validate(conf Config) error {
 	}
 	if conf.Kafka.ValidationsTopic == "" {
 		return fmt.Errorf("kafka.validationsTopic is required")
+	}
+	if conf.Kafka.LedgerTopic == "" {
+		return fmt.Errorf("kafka.ledgerTopic is required")
 	}
 	if conf.Kafka.ConsumerGroupID == "" {
 		return fmt.Errorf("kafka.consumerGroupID is required")

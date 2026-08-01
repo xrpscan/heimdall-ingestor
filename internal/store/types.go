@@ -1,15 +1,21 @@
 package store
 
+import (
+	"fmt"
+	"strconv"
+)
+
 // ValidationMessage represents a single row of the validations table.
 type ValidationMessage struct {
-	ID int64 `json:"id"`
+	ID int64
 
-	MasterKey     string    `json:"master_key"`
-	LedgerIndex   int64     `json:"ledger_index"`
-	Payload       []byte    `json:"payload"`
-	HeimTimestamp Timestamp `json:"heim_timestamp"`
+	MasterKey   string
+	LedgerIndex int64
+	Payload     []byte
 
-	CreatedAt Timestamp `json:"created_at"`
+	UnixSigningTime   Timestamp
+	ObserverCreatedAt Timestamp
+	CreatedAt         Timestamp
 }
 
 // ValidationMessagePayload is the schema of a message received from the Kafka validations topic.
@@ -69,4 +75,73 @@ type ValidationMessagePayload struct {
 	// used to verify the signature. If the validator is using a token, this is an ephemeral
 	// public key.
 	ValidationPublicKey string `json:"validation_public_key"`
+}
+
+// LedgerMessage represents a single row of the ledger table.
+type LedgerMessage struct {
+	ID int64
+
+	LedgerIndex int64
+	LedgerHash  string
+
+	ObserverCreatedAt Timestamp
+	CreatedAt         Timestamp
+}
+
+// LedgerMessagePayload is the schema of a message received from the Kafka ledger topic.
+//
+// See: https://xrpl.org/docs/references/http-websocket-apis/public-api-methods/subscription-methods/subscribe#ledger-stream
+type LedgerMessagePayload struct {
+	// `ledgerClosed` indicates this is from the ledger stream
+	Type string `json:"type"`
+	// The reference transaction cost as of this ledger version, in drops of XRP. If this
+	// ledger version includes a SetFee pseudo-transaction the new transaction cost applies
+	// starting with the following ledger version.
+	FeeBase int `json:"fee_base"`
+	// (May be omitted) The reference transaction cost in "fee units". If the XRPFees
+	// amendment is enabled, this field is permanently omitted as it will no longer be relevant.
+	FeeRef int `json:"fee_ref"`
+	// The identifying hash of the ledger version that was closed.
+	LedgerHash string `json:"ledger_hash"`
+	// The ledger index of the ledger that was closed.
+	LedgerIndex any `json:"ledger_index"`
+	// The time this ledger was closed, in seconds since the Ripple Epoch.
+	LedgerTime uint64 `json:"ledger_time"`
+	// The XRPL network of this stream.
+	NetworkID int64 `json:"network_id"`
+	// The minimum reserve, in drops of XRP, that is required for an account. If this ledger
+	// version includes a SetFee pseudo-transaction the new base reserve applies starting with
+	// the following ledger version.
+	ReserveBase uint `json:"reserve_base"`
+	// The owner reserve for each object an account owns in the ledger, in drops of XRP. If
+	// the ledger includes a SetFee pseudo-transaction the new owner reserve applies after
+	// this ledger.
+	ReserveInc uint `json:"reserve_inc"`
+	// Number of new transactions included in this ledger version.
+	TxnCount int `json:"txn_count"`
+	// (May be omitted) Range of ledgers that the server has available. This may be a disjoint
+	// sequence such as 24900901-24900984,24901116-24901158. This field is not returned if the
+	// server is not connected to the network, or if it is connected but has not yet obtained
+	// a ledger from the network.
+	ValidatedLedgers string `json:"validated_ledgers,omitempty"`
+}
+
+// LedgerIndexParsed parses the ledger index field to int.
+func (l LedgerMessagePayload) LedgerIndexParsed() (int64, error) {
+	switch x := l.LedgerIndex.(type) {
+	case int64:
+		return x, nil
+	case int:
+		return int64(x), nil
+	case float64:
+		return int64(x), nil
+	case string:
+		parsed, err := strconv.Atoi(x)
+		if err != nil {
+			return 0, fmt.Errorf("invalid number: %s", x)
+		}
+		return int64(parsed), nil
+	default:
+		return 0, fmt.Errorf("unrecognized type: %v (%T)", x, x)
+	}
 }

@@ -73,7 +73,8 @@ func main() {
 	}
 
 	// Handler abstraction for all Kafka messages.
-	kafkaHandler := handlers.NewKafkaRecordHandler(database)
+	kafkaHandler := handlers.NewKafkaRecordHandler(database,
+		conf.Kafka.ValidationsTopic, conf.Kafka.LedgerTopic)
 
 	// Create Kafka Consumer.
 	kafkaConsumer, err := kafkaesque.NewFranzGoConsumer(ctx, kafkaesque.ConsumerParams{
@@ -81,9 +82,9 @@ func main() {
 		Username:        conf.Kafka.Username,
 		Password:        conf.Kafka.Password,
 		CACertPath:      conf.Kafka.CACertPath,
-		Topic:           conf.Kafka.ValidationsTopic,
+		Topics:          []string{conf.Kafka.ValidationsTopic, conf.Kafka.LedgerTopic},
 		ConsumerGroupID: conf.Kafka.ConsumerGroupID,
-		Handler:         kafkaHandler.HandleValidationMessageBatch,
+		Handler:         kafkaHandler.HandleBatch,
 		MaxRetryCount:   conf.Kafka.MaxMessageRetryCount,
 		RetryInterval:   time.Millisecond * time.Duration(conf.Kafka.MessageRetryIntervalMs),
 		Logger:          slog.Default(),

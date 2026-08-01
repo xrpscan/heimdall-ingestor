@@ -5,7 +5,7 @@ import (
 )
 
 // RecordHandlerFunc represents a function that processes a Kafka message/record.
-type RecordHandlerFunc func(ctx context.Context, record Record) error
+type RecordHandlerFunc func(ctx context.Context, topic string, record Record) error
 
 // Record represents a Kafka message/record.
 type Record struct {

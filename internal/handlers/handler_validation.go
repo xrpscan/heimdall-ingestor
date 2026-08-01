@@ -1,0 +1,79 @@
+package handlers
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"strconv"
+
+	"github.com/xrpscan/heimdall-ingestor/internal/store"
+)
+
+func (k KafkaRecordHandler) handleValidationMessageBatch(
+	ctx context.Context, batch []validationBatchItem,
+) error {
+	// The validation layer.
+	filteredBatch := filterValidationBatch(ctx, batch)
+
+	// If all messages were invalid, return early.
+	if len(filteredBatch) == 0 {
+		slog.WarnContext(ctx, "no valid messages in the batch")
+		return nil
+	}
+
+	// This will be used for the batch insertion.
+	persistable := make([]store.ValidationMessage, len(filteredBatch))
+
+	// Make messages ready for persistence. No errors must be swallowed here.
+	for i, item := range filteredBatch {
+		enriched, err := k.enrichValidationMessage(item)
+		if err != nil {
+			return fmt.Errorf("failed to enrich message: %w", err)
+		}
+		persistable[i] = enriched
+	}
+
+	// Store in database.
+	insertedCount, err := k.db.InsertValidationMessagesIfNotExist(ctx, persistable)
+	if err != nil {
+		return fmt.Errorf("failed to persist batch: %w", err)
+	}
+
+	slog.InfoContext(ctx, "successfully inserted the batch in the database",
+		"insertedCount", insertedCount, "totalCount", len(filteredBatch))
+	return nil
+}
+
+// enrichValidationMessage enriches the given batch item by assigning required fields like
+// UnixSigningTime, ObserverCreatedAt etc.
+func (k KafkaRecordHandler) enrichValidationMessage(
+	item validationBatchItem,
+) (store.ValidationMessage, error) {
+	message := item.Message
+
+	// If master key is absent, the validation public key can be assumed to be the master key.
+	masterKey := message.MasterKey
+	if message.MasterKey == "" {
+		masterKey = message.ValidationPublicKey
+	}
+
+	// This is already validated so no need to handle error.
+	li, _ := strconv.ParseUint(message.LedgerIndex, 10, 64)
+	// SigningTime is in seconds but database expects milliseconds.
+	unixSigningTimeMs := xrplEpochToUnixEpoch(message.SigningTime) * 1000
+
+	// Payload byte slice.
+	messageBytes, err := json.Marshal(message)
+	if err != nil {
+		return store.ValidationMessage{}, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	return store.ValidationMessage{
+		MasterKey:         masterKey,
+		LedgerIndex:       int64(li),
+		Payload:           messageBytes,
+		UnixSigningTime:   store.Timestamp(unixSigningTimeMs),
+		ObserverCreatedAt: store.Timestamp(item.CreatedAt),
+	}, nil
+}
