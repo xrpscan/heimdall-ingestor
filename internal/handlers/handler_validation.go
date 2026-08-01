@@ -29,7 +29,7 @@ func (k KafkaRecordHandler) handleValidationMessageBatch(
 
 	// Make messages ready for persistence. No errors must be swallowed here.
 	for i, item := range filteredBatch {
-		enriched, err := k.enrichValidationMessage(item)
+		enriched, err := k.enrichValidationMessage(ctx, item)
 		if err != nil {
 			return fmt.Errorf("failed to enrich message: %w", err)
 		}
@@ -50,7 +50,7 @@ func (k KafkaRecordHandler) handleValidationMessageBatch(
 // enrichValidationMessage enriches the given batch item by assigning required fields like
 // UnixSigningTime, ObserverCreatedAt etc.
 func (k KafkaRecordHandler) enrichValidationMessage(
-	item validationBatchItem,
+	_ context.Context, item validationBatchItem,
 ) (store.ValidationMessage, error) {
 	message := item.Message
 

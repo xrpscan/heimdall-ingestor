@@ -9,18 +9,22 @@ import (
 	"github.com/xrpscan/heimdall-ingestor/internal/logger"
 	"github.com/xrpscan/heimdall-ingestor/internal/store"
 	"github.com/xrpscan/heimdall-ingestor/pkg/kafkaesque"
+	"github.com/xrpscan/heimdall-ingestor/pkg/xrpld"
 )
 
 // KafkaRecordHandler encapsulates methods required to handle/process Kafka records/messages.
 type KafkaRecordHandler struct {
 	db          store.Client
+	xrp         xrpld.Interface
 	validnTopic string
 	ledgerTopic string
 }
 
 // NewKafkaRecordHandler returns a new KafkaRecordHandler instance.
-func NewKafkaRecordHandler(db store.Client, validnTopic, ledgerTopic string) KafkaRecordHandler {
-	return KafkaRecordHandler{db: db, validnTopic: validnTopic, ledgerTopic: ledgerTopic}
+func NewKafkaRecordHandler(
+	db store.Client, xrp xrpld.Interface, validnTopic, ledgerTopic string,
+) KafkaRecordHandler {
+	return KafkaRecordHandler{db: db, xrp: xrp, validnTopic: validnTopic, ledgerTopic: ledgerTopic}
 }
 
 // HandleBatch processes a batch (or list) as coming from the Observer.

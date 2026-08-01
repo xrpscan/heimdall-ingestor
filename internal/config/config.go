@@ -41,6 +41,10 @@ type Config struct {
 		Level    string `json:"level"`
 		Pretty   bool   `json:"pretty"`
 	} `json:"logger"`
+
+	XRPL struct {
+		Addr string `json:"addr"`
+	} `json:"xrpl"`
 }
 
 // Load config from the given JSON file.
@@ -108,6 +112,10 @@ func validate(conf Config) error {
 
 	if conf.Logger.Level == "" {
 		return fmt.Errorf("logger.level is required")
+	}
+
+	if conf.XRPL.Addr == "" {
+		return fmt.Errorf("xrpl.addr is required")
 	}
 
 	return nil

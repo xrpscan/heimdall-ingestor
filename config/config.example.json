@@ -25,5 +25,8 @@
     "filePath": "./logs/ingestor.log",
     "level": "debug",
     "pretty": true
+  },
+  "xrpl": {
+    "addr": "https://xrplcluster.com"
   }
 }

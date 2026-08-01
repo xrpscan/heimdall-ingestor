@@ -16,6 +16,7 @@ import (
 	"github.com/xrpscan/heimdall-ingestor/internal/store"
 	"github.com/xrpscan/heimdall-ingestor/pkg/kafkaesque"
 	"github.com/xrpscan/heimdall-ingestor/pkg/registry"
+	"github.com/xrpscan/heimdall-ingestor/pkg/xrpld"
 )
 
 func main() {
@@ -52,6 +53,10 @@ func main() {
 	wd, _ := os.Getwd()
 	slog.InfoContext(ctx, "config file path", "path", *configPath, "wd", wd)
 
+	// XRPL client.
+	xrp := xrpld.NewClient(conf.XRPL.Addr, slog.Default())
+	reg.RegisterWithFunc("xrpl-client", func(_ context.Context) error { xrp.Close(); return nil })
+
 	// Connect to the database.
 	database, err := store.NewPostgresClient(ctx, conf.Database.Addr, conf.Database.Username,
 		conf.Database.Password, conf.Database.Database)
@@ -73,7 +78,7 @@ func main() {
 	}
 
 	// Handler abstraction for all Kafka messages.
-	kafkaHandler := handlers.NewKafkaRecordHandler(database,
+	kafkaHandler := handlers.NewKafkaRecordHandler(database, xrp,
 		conf.Kafka.ValidationsTopic, conf.Kafka.LedgerTopic)
 
 	// Create Kafka Consumer.

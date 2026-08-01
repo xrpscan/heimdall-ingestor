@@ -12,7 +12,7 @@ import (
 
 // Interface to represent an xrpld client abstraction.
 type Interface interface {
-	GetManifest(ctx context.Context, validatorPublicKey string) (ManifestDetails, error)
+	GetManifest(ctx context.Context, masterKey string) (ManifestDetails, error)
 }
 
 // Client implements [Interface].
@@ -39,6 +39,11 @@ func NewClient(addr string, logger Logger) *Client {
 	}
 }
 
+// Close the client.
+func (c *Client) Close() {
+	c.httpClient.CloseIdleConnections()
+}
+
 // GetManifest fetches a validator's manifest details from xrpld. Results are cached permanently,
 // so only the first call per key makes a network request. If multiple goroutines call GetManifest
 // for the same key before the first response is cached, each one will make its own network request
@@ -46,19 +51,19 @@ func NewClient(addr string, logger Logger) *Client {
 //
 // See: https://xrpl.org/docs/references/http-websocket-apis/public-api-methods/server-info-methods/manifest
 func (c *Client) GetManifest(
-	ctx context.Context, validatorPublicKey string,
+	ctx context.Context, masterKey string,
 ) (ManifestDetails, error) {
 	// Use cache if available.
-	value, ok := c.valDomainCache.get(validatorPublicKey)
+	value, ok := c.valDomainCache.get(masterKey)
 	if ok {
-		c.logger.DebugContext(ctx, "cache hit in GetManifest", "validator", validatorPublicKey)
+		c.logger.DebugContext(ctx, "cache hit in GetManifest", "validator", masterKey)
 		return value, nil
 	}
-	c.logger.DebugContext(ctx, "cache miss in GetManifest", "validator", validatorPublicKey)
+	c.logger.DebugContext(ctx, "cache miss in GetManifest", "validator", masterKey)
 
 	command := commandRequest{
 		Method: "manifest",
-		Params: []map[string]any{{"public_key": validatorPublicKey}},
+		Params: []map[string]any{{"public_key": masterKey}},
 	}
 
 	// Marshal the body for the http request.
@@ -113,7 +118,7 @@ func (c *Client) GetManifest(
 	}
 
 	// Update cache. The command will never be invoked again for this validator.
-	c.valDomainCache.set(validatorPublicKey, result)
+	c.valDomainCache.set(masterKey, result)
 	return result, nil
 }
 
