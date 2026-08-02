@@ -1,6 +1,8 @@
 package store
 
-import "context"
+import (
+	"context"
+)
 
 // Client for the application's storage layer.
 type Client interface {
