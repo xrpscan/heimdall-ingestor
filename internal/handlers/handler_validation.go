@@ -44,6 +44,7 @@ func (k KafkaRecordHandler) handleValidationMessageBatch(
 
 	slog.InfoContext(ctx, "successfully inserted the batch in the database",
 		"insertedCount", insertedCount, "totalCount", len(filteredBatch))
+
 	return nil
 }
 

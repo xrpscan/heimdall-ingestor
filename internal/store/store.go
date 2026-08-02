@@ -15,4 +15,10 @@ type Client interface {
 	InsertLedgerMessagesIfNotExist(
 		ctx context.Context, messages []LedgerMessage,
 	) (int64, error)
+
+	// UpsertValidatorManifests upserts multiple entries in the validator_manifests table.
+	//
+	// Note that the CreatedAt and UpdatedAt fields are auto-populated. The provided values get
+	// ignored.
+	UpsertValidatorManifests(ctx context.Context, manifests []ValidatorManifest) (int64, error)
 }

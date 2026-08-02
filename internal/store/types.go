@@ -154,3 +154,11 @@ func (l LedgerMessagePayload) LedgerIndexParsed() (int64, error) {
 		return 0, fmt.Errorf("unrecognized type: %v (%T)", x, x)
 	}
 }
+
+// ValidatorManifest represents a single row from the validator_manifests table.
+type ValidatorManifest struct {
+	MasterKey string
+	Domain    string
+	CreatedAt Timestamp
+	UpdatedAt Timestamp
+}
