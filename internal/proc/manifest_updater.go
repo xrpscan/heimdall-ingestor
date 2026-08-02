@@ -48,7 +48,9 @@ func NewManifestUpdater(
 func (m *ManifestUpdater) Register(masterKey string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	m.lastUpdated[masterKey] = time.Time{}
+	if _, exists := m.lastUpdated[masterKey]; !exists {
+		m.lastUpdated[masterKey] = time.Time{}
+	}
 }
 
 // Start updating the manifests. This is a blocking call and returns only once the context expires.

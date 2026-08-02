@@ -79,6 +79,16 @@ func main() {
 		mu.Start(ctx)
 	}()
 
+	syncer := proc.NewUNLSyncer(time.Second * time.Duration(conf.UNLSyncer.RunIntervalSec))
+	reg.RegisterWithFunc("unl-syncer", func(_ context.Context) error { syncer.Close(); return nil })
+
+	// Start the UNL Syncer.
+	go func() {
+		defer cancel()
+		slog.InfoContext(ctx, "starting the unl syncer")
+		syncer.Start(ctx)
+	}()
+
 	// Register database for cleanup.
 	reg.Register("database", database)
 	slog.InfoContext(ctx, "successfully connected to the database", "addr", conf.Database.Addr)

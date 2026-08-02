@@ -30,6 +30,9 @@
     "runIntervalSec": 60,
     "maxAgeSec": 3600
   },
+  "unlSyncer": {
+    "runIntervalSec": 300
+  },
   "xrpl": {
     "addr": "https://xrplcluster.com"
   }

@@ -47,6 +47,10 @@ type Config struct {
 		MaxAgeSec      int `json:"maxAgeSec"`
 	} `json:"manifestUpdater"`
 
+	UNLSyncer struct {
+		RunIntervalSec int `json:"runIntervalSec"`
+	} `json:"unlSyncer"`
+
 	XRPL struct {
 		Addr string `json:"addr"`
 	} `json:"xrpl"`
@@ -124,6 +128,10 @@ func validate(conf Config) error {
 	}
 	if conf.ManifestUpdater.MaxAgeSec < 1 {
 		return fmt.Errorf("manifestUpdater.maxAgeSec should be > 0")
+	}
+
+	if conf.UNLSyncer.RunIntervalSec < 1 {
+		return fmt.Errorf("unlSyncer.runIntervalSec should be > 0")
 	}
 
 	if conf.XRPL.Addr == "" {

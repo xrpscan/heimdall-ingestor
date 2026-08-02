@@ -32,7 +32,7 @@ func NewClient(addr string, logger Logger) *Client {
 		logger = noopLogger{}
 	}
 
-	httpClient := &http.Client{Timeout: 10 * time.Second}
+	httpClient := &http.Client{Timeout: 30 * time.Second}
 	return &Client{
 		addr:       addr,
 		logger:     logger,
