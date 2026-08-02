@@ -44,6 +44,7 @@ CREATE TABLE ledger (
 CREATE TABLE validator_manifests (
     master_key  TEXT    PRIMARY KEY,
     domain      TEXT,
+    is_unl      BOOLEAN   NOT NULL DEFAULT FALSE,
     created_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

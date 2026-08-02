@@ -66,6 +66,18 @@ func main() {
 		return
 	}
 
+	// Register database for cleanup.
+	reg.Register("database", database)
+	slog.InfoContext(ctx, "successfully connected to the database", "addr", conf.Database.Addr)
+
+	// Automatically run migrations.
+	if err := database.RunMigrations(ctx, "file://db/migrations"); err != nil {
+		slog.ErrorContext(ctx, "failed to run database migrations", "error", err)
+		return
+	} else {
+		slog.InfoContext(ctx, "successfully ran database migrations")
+	}
+
 	// Process that updates validator manifests in the database periodically.
 	mu := proc.NewManifestUpdater(database, xrp,
 		time.Second*time.Duration(conf.ManifestUpdater.RunIntervalSec),
@@ -79,7 +91,7 @@ func main() {
 		mu.Start(ctx)
 	}()
 
-	syncer := proc.NewUNLSyncer(time.Second * time.Duration(conf.UNLSyncer.RunIntervalSec))
+	syncer := proc.NewUNLSyncer(database, time.Second*time.Duration(conf.UNLSyncer.RunIntervalSec))
 	reg.RegisterWithFunc("unl-syncer", func(_ context.Context) error { syncer.Close(); return nil })
 
 	// Start the UNL Syncer.
@@ -88,18 +100,6 @@ func main() {
 		slog.InfoContext(ctx, "starting the unl syncer")
 		syncer.Start(ctx)
 	}()
-
-	// Register database for cleanup.
-	reg.Register("database", database)
-	slog.InfoContext(ctx, "successfully connected to the database", "addr", conf.Database.Addr)
-
-	// Automatically run migrations.
-	if err := database.RunMigrations(ctx, "file://db/migrations"); err != nil {
-		slog.ErrorContext(ctx, "failed to run database migrations", "error", err)
-		return
-	} else {
-		slog.InfoContext(ctx, "successfully ran database migrations")
-	}
 
 	// Handler abstraction for all Kafka messages.
 	kafkaHandler := handlers.NewKafkaRecordHandler(handlers.KafkaRecordHandlerOptions{

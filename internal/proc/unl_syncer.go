@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/xrpscan/heimdall-ingestor/internal/store"
 	"github.com/xrpscan/heimdall-ingestor/pkg/xrpld"
 )
 
 // UNLSyncer periodically polls https://unl.xrplf.org to stay in sync with the UNL of validators.
 type UNLSyncer struct {
+	database    store.Client
 	httpClient  *http.Client
 	runInterval time.Duration
 }
@@ -22,9 +24,9 @@ type UNLSyncer struct {
 // NewUNLSyncer returns a new instance of [UNLSyncer].
 //
 // The syncer will run after every given runInterval duration.
-func NewUNLSyncer(runInterval time.Duration) *UNLSyncer {
+func NewUNLSyncer(database store.Client, runInterval time.Duration) *UNLSyncer {
 	httpClient := &http.Client{Timeout: 30 * time.Second}
-	return &UNLSyncer{httpClient: httpClient, runInterval: runInterval}
+	return &UNLSyncer{database: database, httpClient: httpClient, runInterval: runInterval}
 }
 
 // Start the UNL syncing process. This is a blocking call which returns only once the given context
@@ -42,6 +44,8 @@ func (u *UNLSyncer) Start(ctx context.Context) {
 
 		if err := u.sync(ktx); err != nil {
 			slog.ErrorContext(ctx, "failed to sync unl", "error", err)
+		} else {
+			slog.InfoContext(ctx, "successfully updated unl validators in the database")
 		}
 	}
 
@@ -97,8 +101,12 @@ func (u *UNLSyncer) sync(ctx context.Context) error {
 		unlValidators = append(unlValidators, key)
 	}
 
-	// TODO: Sync in database.
 	slog.InfoContext(ctx, "successfully decoded unl validators", "count", len(unlValidators))
+	// Update flags in the database.
+	if err := u.database.UpdateUNLValidators(ctx, unlValidators); err != nil {
+		return fmt.Errorf("failed to update unl validators in the database: %w", err)
+	}
+
 	return nil
 }
 

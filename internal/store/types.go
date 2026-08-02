@@ -159,6 +159,7 @@ func (l LedgerMessagePayload) LedgerIndexParsed() (int64, error) {
 type ValidatorManifest struct {
 	MasterKey string
 	Domain    string
+	IsUNL     bool
 	CreatedAt Timestamp
 	UpdatedAt Timestamp
 }
