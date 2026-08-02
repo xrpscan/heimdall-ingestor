@@ -26,6 +26,10 @@
     "level": "debug",
     "pretty": true
   },
+  "manifestUpdater": {
+    "runIntervalSec": 60,
+    "maxAgeSec": 3600
+  },
   "xrpl": {
     "addr": "https://xrplcluster.com"
   }

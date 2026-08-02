@@ -26,6 +26,8 @@ func (k KafkaRecordHandler) handleValidationMessageBatch(
 
 	// This will be used for the batch insertion.
 	persistable := make([]store.ValidationMessage, len(filteredBatch))
+	// For invoking ValidatorManifestUpdaterFunc.
+	uniqueMasterKeys := map[string]struct{}{}
 
 	// Make messages ready for persistence. No errors must be swallowed here.
 	for i, item := range filteredBatch {
@@ -34,12 +36,18 @@ func (k KafkaRecordHandler) handleValidationMessageBatch(
 			return fmt.Errorf("failed to enrich message: %w", err)
 		}
 		persistable[i] = enriched
+		uniqueMasterKeys[enriched.MasterKey] = struct{}{}
 	}
 
 	// Store in database.
-	insertedCount, err := k.db.InsertValidationMessagesIfNotExist(ctx, persistable)
+	insertedCount, err := k.opts.Database.InsertValidationMessagesIfNotExist(ctx, persistable)
 	if err != nil {
 		return fmt.Errorf("failed to persist batch: %w", err)
+	}
+
+	// Mark validators for manifest update.
+	for key := range uniqueMasterKeys {
+		k.opts.ValidatorManifestUpdaterFunc(key)
 	}
 
 	slog.InfoContext(ctx, "successfully inserted the batch in the database",

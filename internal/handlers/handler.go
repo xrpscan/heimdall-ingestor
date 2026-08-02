@@ -9,22 +9,35 @@ import (
 	"github.com/xrpscan/heimdall-ingestor/internal/logger"
 	"github.com/xrpscan/heimdall-ingestor/internal/store"
 	"github.com/xrpscan/heimdall-ingestor/pkg/kafkaesque"
-	"github.com/xrpscan/heimdall-ingestor/pkg/xrpld"
 )
 
 // KafkaRecordHandler encapsulates methods required to handle/process Kafka records/messages.
 type KafkaRecordHandler struct {
-	db          store.Client
-	xrp         xrpld.Interface
-	validnTopic string
-	ledgerTopic string
+	opts KafkaRecordHandlerOptions
+}
+
+// KafkaRecordHandlerOptions encapsulates all dependencies required by the [KafkaRecordHandler].
+type KafkaRecordHandlerOptions struct {
+	// Database is required so each incoming message can be persisted.
+	Database store.Client
+
+	// ValidationTopic is the Kafka topic from which to read validationReceived messages.
+	ValidationTopic string
+	// LedgerTopic is the Kafka topic from which to read ledgerClosed messages.
+	LedgerTopic string
+
+	// Optional dependency. A function that can be wired up with the ManifestUpdater.
+	ValidatorManifestUpdaterFunc func(masterKey string)
 }
 
 // NewKafkaRecordHandler returns a new KafkaRecordHandler instance.
-func NewKafkaRecordHandler(
-	db store.Client, xrp xrpld.Interface, validnTopic, ledgerTopic string,
-) KafkaRecordHandler {
-	return KafkaRecordHandler{db: db, xrp: xrp, validnTopic: validnTopic, ledgerTopic: ledgerTopic}
+func NewKafkaRecordHandler(opts KafkaRecordHandlerOptions) KafkaRecordHandler {
+	// Since this is an optional dependency.
+	if opts.ValidatorManifestUpdaterFunc == nil {
+		opts.ValidatorManifestUpdaterFunc = func(masterKey string) {}
+	}
+
+	return KafkaRecordHandler{opts: opts}
 }
 
 // HandleBatch processes a batch (or list) as coming from the Observer.
@@ -35,7 +48,7 @@ func (k KafkaRecordHandler) HandleBatch(
 	slog.InfoContext(ctx, "new batch from kafka arrived")
 
 	switch topic {
-	case k.validnTopic:
+	case k.opts.ValidationTopic:
 		var validationBatch []validationBatchItem
 		if err := json.Unmarshal(record.Payload, &validationBatch); err != nil {
 			return fmt.Errorf("failed to unmarshal validation message batch: %w", err)
@@ -44,7 +57,7 @@ func (k KafkaRecordHandler) HandleBatch(
 		if err := k.handleValidationMessageBatch(ctx, validationBatch); err != nil {
 			return fmt.Errorf("failed to process validation message batch: %w", err)
 		}
-	case k.ledgerTopic:
+	case k.opts.LedgerTopic:
 		var ledgerBatch []ledgerBatchItem
 		if err := json.Unmarshal(record.Payload, &ledgerBatch); err != nil {
 			return fmt.Errorf("failed to unmarshal ledger message batch: %w", err)

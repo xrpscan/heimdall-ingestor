@@ -37,7 +37,7 @@ func (k KafkaRecordHandler) handleLedgerMessageBatch(
 	}
 
 	// Store in database.
-	insertedCount, err := k.db.InsertLedgerMessagesIfNotExist(ctx, persistable)
+	insertedCount, err := k.opts.Database.InsertLedgerMessagesIfNotExist(ctx, persistable)
 	if err != nil {
 		return fmt.Errorf("failed to persist batch: %w", err)
 	}

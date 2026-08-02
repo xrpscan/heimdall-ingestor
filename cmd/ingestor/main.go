@@ -12,6 +12,7 @@ import (
 	"github.com/xrpscan/heimdall-ingestor/internal/config"
 	"github.com/xrpscan/heimdall-ingestor/internal/handlers"
 	"github.com/xrpscan/heimdall-ingestor/internal/logger"
+	"github.com/xrpscan/heimdall-ingestor/internal/proc"
 	"github.com/xrpscan/heimdall-ingestor/internal/rest"
 	"github.com/xrpscan/heimdall-ingestor/internal/store"
 	"github.com/xrpscan/heimdall-ingestor/pkg/kafkaesque"
@@ -65,6 +66,19 @@ func main() {
 		return
 	}
 
+	// Process that updates validator manifests in the database periodically.
+	mu := proc.NewManifestUpdater(database, xrp,
+		time.Second*time.Duration(conf.ManifestUpdater.RunIntervalSec),
+		time.Second*time.Duration(conf.ManifestUpdater.MaxAgeSec),
+	)
+
+	// Start the manifest updater.
+	go func() {
+		defer cancel()
+		slog.InfoContext(ctx, "starting manifest updater")
+		mu.Start(ctx)
+	}()
+
 	// Register database for cleanup.
 	reg.Register("database", database)
 	slog.InfoContext(ctx, "successfully connected to the database", "addr", conf.Database.Addr)
@@ -78,8 +92,12 @@ func main() {
 	}
 
 	// Handler abstraction for all Kafka messages.
-	kafkaHandler := handlers.NewKafkaRecordHandler(database, xrp,
-		conf.Kafka.ValidationsTopic, conf.Kafka.LedgerTopic)
+	kafkaHandler := handlers.NewKafkaRecordHandler(handlers.KafkaRecordHandlerOptions{
+		Database:                     database,
+		ValidationTopic:              conf.Kafka.ValidationsTopic,
+		LedgerTopic:                  conf.Kafka.LedgerTopic,
+		ValidatorManifestUpdaterFunc: mu.Register,
+	})
 
 	// Create Kafka Consumer.
 	kafkaConsumer, err := kafkaesque.NewFranzGoConsumer(ctx, kafkaesque.ConsumerParams{

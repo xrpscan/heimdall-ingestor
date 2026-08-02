@@ -42,6 +42,11 @@ type Config struct {
 		Pretty   bool   `json:"pretty"`
 	} `json:"logger"`
 
+	ManifestUpdater struct {
+		RunIntervalSec int `json:"runIntervalSec"`
+		MaxAgeSec      int `json:"maxAgeSec"`
+	} `json:"manifestUpdater"`
+
 	XRPL struct {
 		Addr string `json:"addr"`
 	} `json:"xrpl"`
@@ -112,6 +117,13 @@ func validate(conf Config) error {
 
 	if conf.Logger.Level == "" {
 		return fmt.Errorf("logger.level is required")
+	}
+
+	if conf.ManifestUpdater.RunIntervalSec < 1 {
+		return fmt.Errorf("manifestUpdater.runIntervalSec should be > 0")
+	}
+	if conf.ManifestUpdater.MaxAgeSec < 1 {
+		return fmt.Errorf("manifestUpdater.maxAgeSec should be > 0")
 	}
 
 	if conf.XRPL.Addr == "" {
