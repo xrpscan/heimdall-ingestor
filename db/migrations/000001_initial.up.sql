@@ -77,7 +77,7 @@ BEGIN
   SELECT
     v.master_key,
     v.ledger_index,
-    (v.ledger_hash = NEW.ledger_hash AND v.observer_created_at < NEW.observer_created_at),
+    (v.ledger_hash = NEW.ledger_hash AND v.unix_signing_time <= NEW.observer_created_at),
     NEW.observer_created_at
   FROM validations v
   WHERE v.ledger_index = NEW.ledger_index
