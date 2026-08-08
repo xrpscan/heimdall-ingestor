@@ -12,6 +12,7 @@ type ValidationMessage struct {
 	MasterKey   string
 	LedgerIndex int64
 	LedgerHash  string
+	IsFull      bool
 	Payload     []byte
 
 	UnixSigningTime   Timestamp

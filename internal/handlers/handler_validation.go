@@ -84,6 +84,7 @@ func (k KafkaRecordHandler) enrichValidationMessage(
 		MasterKey:         masterKey,
 		LedgerIndex:       int64(li),
 		LedgerHash:        message.LedgerHash,
+		IsFull:            message.Full,
 		Payload:           messageBytes,
 		UnixSigningTime:   store.Timestamp(unixSigningTimeMs),
 		ObserverCreatedAt: store.Timestamp(item.CreatedAt),

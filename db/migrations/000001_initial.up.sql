@@ -16,6 +16,7 @@ CREATE TABLE validations (
     master_key      TEXT    NOT NULL,
     ledger_index    BIGINT  NOT NULL,
     ledger_hash     TEXT    NOT NULL,
+    is_full         BOOLEAN NOT NULL,
     payload         JSONB   NOT NULL,
 
     unix_signing_time   TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -82,7 +83,7 @@ BEGIN
   SELECT
     v.master_key,
     v.ledger_index,
-    (v.ledger_hash = NEW.ledger_hash AND v.unix_signing_time <= NEW.observer_created_at),
+    (v.is_full = TRUE AND v.ledger_hash = NEW.ledger_hash AND v.unix_signing_time <= NEW.observer_created_at),
     NEW.observer_created_at
   FROM validations v
   WHERE v.ledger_index = NEW.ledger_index
@@ -101,7 +102,7 @@ BEGIN
     SELECT
       v.master_key,
       v.ledger_index,
-      (v.ledger_hash = prev.ledger_hash AND v.unix_signing_time <= prev.observer_created_at),
+      (v.is_full = TRUE AND v.ledger_hash = prev.ledger_hash AND v.unix_signing_time <= prev.observer_created_at),
       prev.observer_created_at
     FROM validations v
     WHERE v.ledger_index = prev.ledger_index
