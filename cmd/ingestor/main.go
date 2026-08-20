@@ -7,11 +7,17 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/xrpscan/heimdall-ingestor/internal/config"
+	"github.com/xrpscan/heimdall-ingestor/internal/handlers"
 	"github.com/xrpscan/heimdall-ingestor/internal/logger"
+	"github.com/xrpscan/heimdall-ingestor/internal/proc"
 	"github.com/xrpscan/heimdall-ingestor/internal/rest"
+	"github.com/xrpscan/heimdall-ingestor/internal/store"
+	"github.com/xrpscan/heimdall-ingestor/pkg/kafkaesque"
 	"github.com/xrpscan/heimdall-ingestor/pkg/registry"
+	"github.com/xrpscan/heimdall-ingestor/pkg/xrpld"
 )
 
 func main() {
@@ -47,6 +53,91 @@ func main() {
 	// Log config file path along with the working directory to avoid confusions.
 	wd, _ := os.Getwd()
 	slog.InfoContext(ctx, "config file path", "path", *configPath, "wd", wd)
+
+	// XRPL client.
+	xrp := xrpld.NewClient(conf.XRPL.Addr, slog.Default())
+	reg.RegisterWithFunc("xrpl-client", func(_ context.Context) error { xrp.Close(); return nil })
+
+	// Connect to the database.
+	database, err := store.NewPostgresClient(ctx, conf.Database.Addr, conf.Database.Username,
+		conf.Database.Password, conf.Database.Database)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to connect to database", "error", err)
+		return
+	}
+
+	// Register database for cleanup.
+	reg.Register("database", database)
+	slog.InfoContext(ctx, "successfully connected to the database", "addr", conf.Database.Addr)
+
+	// Automatically run migrations.
+	if err := database.RunMigrations(ctx, "file://db/migrations"); err != nil {
+		slog.ErrorContext(ctx, "failed to run database migrations", "error", err)
+		return
+	} else {
+		slog.InfoContext(ctx, "successfully ran database migrations")
+	}
+
+	// Process that updates validator manifests in the database periodically.
+	mu := proc.NewManifestUpdater(database, xrp,
+		time.Second*time.Duration(conf.ManifestUpdater.RunIntervalSec),
+		time.Second*time.Duration(conf.ManifestUpdater.MaxAgeSec),
+	)
+
+	// Start the manifest updater.
+	go func() {
+		defer cancel()
+		slog.InfoContext(ctx, "starting manifest updater")
+		mu.Start(ctx)
+	}()
+
+	syncer := proc.NewUNLSyncer(database, time.Second*time.Duration(conf.UNLSyncer.RunIntervalSec))
+	reg.RegisterWithFunc("unl-syncer", func(_ context.Context) error { syncer.Close(); return nil })
+
+	// Start the UNL Syncer.
+	go func() {
+		defer cancel()
+		slog.InfoContext(ctx, "starting the unl syncer")
+		syncer.Start(ctx)
+	}()
+
+	// Handler abstraction for all Kafka messages.
+	kafkaHandler := handlers.NewKafkaRecordHandler(handlers.KafkaRecordHandlerOptions{
+		Database:                     database,
+		ValidationTopic:              conf.Kafka.ValidationsTopic,
+		LedgerTopic:                  conf.Kafka.LedgerTopic,
+		ValidatorManifestUpdaterFunc: mu.Register,
+	})
+
+	// Create Kafka Consumer.
+	kafkaConsumer, err := kafkaesque.NewFranzGoConsumer(ctx, kafkaesque.ConsumerParams{
+		Brokers:         conf.Kafka.Brokers,
+		Username:        conf.Kafka.Username,
+		Password:        conf.Kafka.Password,
+		CACertPath:      conf.Kafka.CACertPath,
+		Topics:          []string{conf.Kafka.ValidationsTopic, conf.Kafka.LedgerTopic},
+		ConsumerGroupID: conf.Kafka.ConsumerGroupID,
+		Handler:         kafkaHandler.HandleBatch,
+		MaxRetryCount:   conf.Kafka.MaxMessageRetryCount,
+		RetryInterval:   time.Millisecond * time.Duration(conf.Kafka.MessageRetryIntervalMs),
+		Logger:          slog.Default(),
+	})
+
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to create kafka consumer", "error", err)
+		return
+	}
+
+	// Register Kafka Consumer for cleanup.
+	reg.Register("kafka-consumer", kafkaConsumer)
+	slog.InfoContext(ctx, "successfully connected to Kafka", "brokers", conf.Kafka.Brokers)
+
+	// Start Kafka consumer without blocking the main thread.
+	go func() {
+		defer cancel()
+		slog.InfoContext(ctx, "starting kafka consumer")
+		kafkaConsumer.ConsumeWithRetry(ctx)
+	}()
 
 	// Create http server and start listening.
 	setupHttpServer(ctx, cancel, conf, reg)

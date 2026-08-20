@@ -1,12 +1,39 @@
 {
+  "database": {
+    "addr": "localhost:5432",
+    "username": "postgres",
+    "password": "dev",
+    "database": "heimdall"
+  },
   "httpServer": {
     "addr": "localhost:9983",
     "allowedOrigins": ["*"],
     "corsMaxAgeSec": 86400
   },
+  "kafka": {
+    "brokers": ["localhost:19095", "localhost:29095", "localhost:39095"],
+    "username": "something",
+    "password": "secret",
+    "caCertPath": "/path/to/ca/cert",
+    "validationsTopic": "your-validations-topic",
+    "ledgerTopic": "your-ledger-topic",
+    "consumerGroupID": "something-group",
+    "maxMessageRetryCount": 100,
+    "messageRetryIntervalMs": 100
+  },
   "logger": {
     "filePath": "./logs/ingestor.log",
     "level": "debug",
     "pretty": true
+  },
+  "manifestUpdater": {
+    "runIntervalSec": 60,
+    "maxAgeSec": 3600
+  },
+  "unlSyncer": {
+    "runIntervalSec": 300
+  },
+  "xrpl": {
+    "addr": "https://xrplcluster.com"
   }
 }
