@@ -127,10 +127,10 @@ func parseHeatmapOptions(
 	// Default endTime is now, default startTime is 7 days ago.
 	now := time.Now()
 	if endTimeStr == "" {
-		endTimeStr = strconv.FormatInt(now.Unix(), 10)
+		endTimeStr = strconv.FormatInt(now.UnixMilli(), 10)
 	}
 	if startTimeStr == "" {
-		startTimeStr = strconv.FormatInt(now.Add(-24*time.Hour).Unix(), 10)
+		startTimeStr = strconv.FormatInt(now.Add(-24*time.Hour).UnixMilli(), 10)
 	}
 
 	parsedLimit, err := strconv.ParseUint(limitStr, 10, 64)
@@ -159,8 +159,8 @@ func parseHeatmapOptions(
 	}
 
 	return store.ValidatorAgreementHeatmapOptions{
-		StartTime: time.Unix(int64(parsedStartTime), 0),
-		EndTime:   time.Unix(int64(parsedEndTime), 0),
+		StartTime: time.UnixMilli(int64(parsedStartTime)),
+		EndTime:   time.UnixMilli(int64(parsedEndTime)),
 		Limit:     uint(parsedLimit),
 		Offset:    uint(parsedOffset),
 	}, nil
