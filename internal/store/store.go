@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"time"
 )
 
 // Client for the application's storage layer.
@@ -29,4 +30,21 @@ type Client interface {
 	// UpdateUNLValidators updates the validator_manifests table so that the rows with the given
 	// master keys have is_unl set to TRUE and all remaining rows have it set to FALSE.
 	UpdateUNLValidators(ctx context.Context, masterKeys []string) error
+
+	// GetValidatorAgreementRates retrieves agreement rates for all validators (active within the
+	// given time period), for every minute.
+	//
+	// Returns paginated results ordered by validation count (descending).
+	GetValidatorAgreementRates(
+		ctx context.Context, options ValidatorAgreementHeatmapOptions,
+	) (AgreementRatesData, error)
+}
+
+// ValidatorAgreementHeatmapOptions can be used to control the heatmap results.
+type ValidatorAgreementHeatmapOptions struct {
+	StartTime time.Time
+	EndTime   time.Time
+
+	Limit  uint
+	Offset uint
 }

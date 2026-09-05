@@ -140,7 +140,7 @@ func main() {
 	}()
 
 	// Create http server and start listening.
-	setupHttpServer(ctx, cancel, conf, reg)
+	setupHttpServer(ctx, cancel, database, conf, reg)
 
 	// Block until the app is interrupted or a process calls the CancelFunc.
 	<-ctx.Done()
@@ -150,10 +150,11 @@ func main() {
 //
 // It registers the http server with the registry and also calls cancel if the server errors.
 func setupHttpServer(
-	ctx context.Context, cancel context.CancelFunc, conf config.Config, reg *registry.Registry,
+	ctx context.Context, cancel context.CancelFunc,
+	database store.Client, conf config.Config, reg *registry.Registry,
 ) {
 	// Create and register the REST API server of the app.
-	server := rest.NewServer(ctx, conf.HttpServer.Addr, rest.NewHandler(conf))
+	server := rest.NewServer(ctx, conf.HttpServer.Addr, rest.NewHandler(database, conf))
 	reg.Register("http-server", server)
 
 	go func() {

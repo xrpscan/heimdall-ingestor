@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/xrpscan/heimdall-ingestor/internal/config"
+	"github.com/xrpscan/heimdall-ingestor/internal/store"
 	"github.com/xrpscan/heimdall-ingestor/pkg/httputils"
 )
 
@@ -14,12 +15,13 @@ const maxBodyReadBytes = 16 * 1024 // 16 KB
 //
 // It implements the http.Handler interface for convenient usage with an http.Server.
 type Handler struct {
+	database   store.Client
 	underlying http.Handler
 }
 
 // NewHandler returns a new Handler instance.
-func NewHandler(conf config.Config) *Handler {
-	handler := &Handler{}
+func NewHandler(database store.Client, conf config.Config) *Handler {
+	handler := &Handler{database: database}
 
 	handler.addRoutes()
 	handler.addMiddleware(conf)
@@ -40,6 +42,9 @@ func (h *Handler) addRoutes() {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		httputils.WriteJson(w, http.StatusOK, nil, map[string]any{"code": "OK"})
 	})
+
+	// Chart APIs.
+	mux.HandleFunc("GET /api/charts/validator-agmt-heatmap", h.handleValidatorAgmtHeatmap)
 }
 
 // addMiddleware wraps the underlying handler with all the middleware.

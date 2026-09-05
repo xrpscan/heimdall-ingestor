@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"strconv"
+	"time"
 )
 
 // ValidationMessage represents a single row of the validations table.
@@ -163,4 +164,18 @@ type ValidatorManifest struct {
 	IsUNL     bool
 	CreatedAt Timestamp
 	UpdatedAt Timestamp
+}
+
+// AgreementRatesData represents validator agreement rate data with total count for pagination.
+type AgreementRatesData struct {
+	Rates []AgreementRate
+	// For pagination since the GetValidatorAgreementHeatmap allows pagination on validators.
+	TotalValidatorCount uint
+}
+
+// AgreementRate shows the agreement rate of a validator at a point in time.
+type AgreementRate struct {
+	Time             time.Time
+	Validator        string  // domain or master_key prefix
+	AgreementPercent float64 // percentage (0-100)
 }
