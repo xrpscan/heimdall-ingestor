@@ -49,7 +49,7 @@ func (p *PostgresClient) GetValidatorAgreementRates(
 		)
 		SELECT
 		  date_trunc('minute', a.ledger_closed_at) AS time,
-		  CASE WHEN vm.domain > '' THEN vm.domain ELSE LEFT(a.master_key, 10) END AS validator,
+		  CASE WHEN vm.domain > '' THEN vm.domain ELSE a.master_key END AS validator,
 		  COUNT(*) FILTER (WHERE a.agreed) * 100.0 / NULLIF(COUNT(*), 0) AS agreement_percent
 		FROM agreements a
 		JOIN top_validators t ON a.master_key = t.master_key
