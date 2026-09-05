@@ -45,6 +45,7 @@ func (h *Handler) addRoutes() {
 
 	// Chart APIs.
 	mux.HandleFunc("GET /api/charts/validator-agmt-heatmap", h.handleValidatorAgmtHeatmap)
+	mux.HandleFunc("GET /api/charts/ledger-close-interval", h.handleLedgerCloseInterval)
 }
 
 // addMiddleware wraps the underlying handler with all the middleware.

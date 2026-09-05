@@ -179,3 +179,10 @@ type AgreementRate struct {
 	Validator        string  // domain or master_key prefix
 	AgreementPercent float64 // percentage (0-100)
 }
+
+// LedgerCloseInterval represents the time interval between consecutive ledger closes.
+type LedgerCloseInterval struct {
+	Time            time.Time
+	IntervalSeconds float64 // seconds between this ledger and the previous one
+	LedgerIndex     int64
+}

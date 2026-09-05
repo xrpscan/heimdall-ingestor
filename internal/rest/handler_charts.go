@@ -27,6 +27,13 @@ type pagination struct {
 	TotalCount uint `json:"totalCount"`
 }
 
+// ledgerCloseIntervalResponse is the response schema for the ledger close interval API.
+type ledgerCloseIntervalResponse struct {
+	Times         []string  `json:"times"`
+	Intervals     []float64 `json:"intervals"`
+	LedgerIndices []string  `json:"ledgerIndices"`
+}
+
 func (h *Handler) handleValidatorAgmtHeatmap(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -59,6 +66,53 @@ func (h *Handler) handleValidatorAgmtHeatmap(w http.ResponseWriter, r *http.Requ
 	}
 
 	httputils.WriteJson(w, http.StatusOK, nil, resp)
+}
+
+func (h *Handler) handleLedgerCloseInterval(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Read query parameters.
+	q := r.URL.Query()
+	startTimeStr, endTimeStr := q.Get("startTime"), q.Get("endTime")
+
+	// Parse query parameters.
+	startTime, endTime, err := parseTimeRange(startTimeStr, endTimeStr)
+	if err != nil {
+		slog.ErrorContext(ctx, "invalid query parameters", "error", err)
+		httputils.WriteError(w, httputils.BadRequest().WithReasonErr(err))
+		return
+	}
+
+	data, err := h.database.GetLedgerCloseIntervals(ctx, startTime, endTime)
+	if err != nil {
+		slog.ErrorContext(ctx, "error in GetLedgerCloseIntervals call", "error", err)
+		httputils.WriteError(w, httputils.InternalServerError().WithReasonErr(err))
+		return
+	}
+
+	// Transform to ECharts format.
+	resp := transformLedgerIntervalsToChart(data)
+	httputils.WriteJson(w, http.StatusOK, nil, resp)
+}
+
+// transformLedgerIntervalsToChart transforms the database results into a format suitable for
+// ECharts line chart.
+func transformLedgerIntervalsToChart(data []store.LedgerCloseInterval) ledgerCloseIntervalResponse {
+	times := make([]string, len(data))
+	intervals := make([]float64, len(data))
+	indices := make([]string, len(data))
+
+	for i, row := range data {
+		times[i] = row.Time.Format("2006-01-02 15:04:05")
+		intervals[i] = row.IntervalSeconds
+		indices[i] = strconv.FormatInt(row.LedgerIndex, 10)
+	}
+
+	return ledgerCloseIntervalResponse{
+		Times:         times,
+		Intervals:     intervals,
+		LedgerIndices: indices,
+	}
 }
 
 // transformAgreementRatesToHeatmap transforms the list agreement rates coming from the database
@@ -111,6 +165,35 @@ func transformAgreementRatesToHeatmap(data store.AgreementRatesData) heatmapResp
 	return heatmapResponse{Data: chartData, XAxis: xAxis, YAxis: yAxis}
 }
 
+// parseTimeRange parses startTime and endTime query parameters.
+// Defaults to last 24 hours if not provided.
+func parseTimeRange(startTimeStr, endTimeStr string) (time.Time, time.Time, error) {
+	// Default endTime is now, default startTime is 24 hours ago.
+	now := time.Now()
+	if endTimeStr == "" {
+		endTimeStr = strconv.FormatInt(now.UnixMilli(), 10)
+	}
+	if startTimeStr == "" {
+		startTimeStr = strconv.FormatInt(now.Add(-24*time.Hour).UnixMilli(), 10)
+	}
+
+	parsedStartTime, err := strconv.ParseInt(startTimeStr, 10, 64)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("startTime is invalid: %w", err)
+	}
+
+	parsedEndTime, err := strconv.ParseInt(endTimeStr, 10, 64)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("endTime is invalid: %w", err)
+	}
+
+	if parsedStartTime >= parsedEndTime {
+		return time.Time{}, time.Time{}, fmt.Errorf("startTime should be before endTime")
+	}
+
+	return time.UnixMilli(parsedStartTime), time.UnixMilli(parsedEndTime), nil
+}
+
 // parseHeatmapOptions parses and validates all query paramters of the heatmap API.
 // It also handles defaults.
 func parseHeatmapOptions(
@@ -124,15 +207,6 @@ func parseHeatmapOptions(
 		offsetStr = "0"
 	}
 
-	// Default endTime is now, default startTime is 7 days ago.
-	now := time.Now()
-	if endTimeStr == "" {
-		endTimeStr = strconv.FormatInt(now.UnixMilli(), 10)
-	}
-	if startTimeStr == "" {
-		startTimeStr = strconv.FormatInt(now.Add(-24*time.Hour).UnixMilli(), 10)
-	}
-
 	parsedLimit, err := strconv.ParseUint(limitStr, 10, 64)
 	if err != nil {
 		return store.ValidatorAgreementHeatmapOptions{}, fmt.Errorf("limit is invalid: %w", err)
@@ -143,24 +217,14 @@ func parseHeatmapOptions(
 		return store.ValidatorAgreementHeatmapOptions{}, fmt.Errorf("offset is invalid: %w", err)
 	}
 
-	parsedStartTime, err := strconv.ParseUint(startTimeStr, 10, 64)
+	startTime, endTime, err := parseTimeRange(startTimeStr, endTimeStr)
 	if err != nil {
-		return store.ValidatorAgreementHeatmapOptions{}, fmt.Errorf("startTime is invalid: %w", err)
-	}
-
-	parsedEndTime, err := strconv.ParseUint(endTimeStr, 10, 64)
-	if err != nil {
-		return store.ValidatorAgreementHeatmapOptions{}, fmt.Errorf("endTime is invalid: %w", err)
-	}
-
-	if parsedStartTime >= parsedEndTime {
-		return store.ValidatorAgreementHeatmapOptions{},
-			fmt.Errorf("startTime should be before endTime")
+		return store.ValidatorAgreementHeatmapOptions{}, err
 	}
 
 	return store.ValidatorAgreementHeatmapOptions{
-		StartTime: time.UnixMilli(int64(parsedStartTime)),
-		EndTime:   time.UnixMilli(int64(parsedEndTime)),
+		StartTime: startTime,
+		EndTime:   endTime,
 		Limit:     uint(parsedLimit),
 		Offset:    uint(parsedOffset),
 	}, nil

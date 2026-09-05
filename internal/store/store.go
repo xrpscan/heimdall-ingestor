@@ -38,6 +38,12 @@ type Client interface {
 	GetValidatorAgreementRates(
 		ctx context.Context, options ValidatorAgreementHeatmapOptions,
 	) (AgreementRatesData, error)
+
+	// GetLedgerCloseIntervals retrieves ledger close intervals (time between consecutive ledgers)
+	// for all ledgers within the given time range.
+	GetLedgerCloseIntervals(
+		ctx context.Context, startTime, endTime time.Time,
+	) ([]LedgerCloseInterval, error)
 }
 
 // ValidatorAgreementHeatmapOptions can be used to control the heatmap results.

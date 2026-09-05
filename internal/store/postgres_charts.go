@@ -84,3 +84,47 @@ func (p *PostgresClient) GetValidatorAgreementRates(
 
 	return AgreementRatesData{Rates: results, TotalValidatorCount: totalCount}, nil
 }
+
+func (p *PostgresClient) GetLedgerCloseIntervals(
+	ctx context.Context, startTime, endTime time.Time,
+) ([]LedgerCloseInterval, error) {
+	query := `
+		SELECT
+		   observer_created_at AS time,
+		   EXTRACT(EPOCH FROM observer_created_at - LAG(observer_created_at) OVER (ORDER BY ledger_index)) AS interval_seconds,
+		   ledger_index
+		 FROM ledger
+		 WHERE observer_created_at BETWEEN $1 AND $2
+		 ORDER BY ledger_index
+	`
+
+	rows, err := p.db.QueryContext(ctx, query, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("error in QueryContext call: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var results []LedgerCloseInterval
+	for rows.Next() {
+		var row LedgerCloseInterval
+		var intervalSeconds *float64 // NULL for the first row (no previous ledger)
+
+		if err := rows.Scan(&row.Time, &intervalSeconds, &row.LedgerIndex); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		// Skip the first row since it has no interval (LAG returns NULL)
+		if intervalSeconds == nil {
+			continue
+		}
+
+		row.IntervalSeconds = *intervalSeconds
+		results = append(results, row)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	return results, nil
+}
