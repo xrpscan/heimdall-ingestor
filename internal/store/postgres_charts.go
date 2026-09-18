@@ -7,18 +7,20 @@ import (
 )
 
 func (p *PostgresClient) GetValidatorCount(
-	ctx context.Context, startTime, endTime time.Time,
+	ctx context.Context, startTime, endTime time.Time, unlOnly bool,
 ) (uint, error) {
 	query := `
 SELECT
-	COUNT(DISTINCT master_key)
+	COUNT(DISTINCT a.master_key)
 FROM
-	agreements
+	agreements a
+LEFT JOIN validator_manifests vm ON a.master_key = vm.master_key
 WHERE
-	ledger_closed_at BETWEEN $1 AND $2`
+	a.ledger_closed_at BETWEEN $1 AND $2
+	AND ($3 = FALSE OR vm.is_unl = TRUE)`
 
 	var total uint
-	if err := p.db.QueryRowContext(ctx, query, startTime, endTime).Scan(&total); err != nil {
+	if err := p.db.QueryRowContext(ctx, query, startTime, endTime, unlOnly).Scan(&total); err != nil {
 		return 0, fmt.Errorf("error in query execution: %w", err)
 	}
 
@@ -28,7 +30,7 @@ WHERE
 func (p *PostgresClient) GetValidatorAgreementRates(
 	ctx context.Context, options ValidatorAgreementHeatmapOptions,
 ) (AgreementRatesData, error) {
-	totalCount, err := p.GetValidatorCount(ctx, options.StartTime, options.EndTime)
+	totalCount, err := p.GetValidatorCount(ctx, options.StartTime, options.EndTime, options.UNLOnly)
 	if err != nil {
 		return AgreementRatesData{}, fmt.Errorf("failed to get total count: %w", err)
 	}
@@ -40,11 +42,19 @@ func (p *PostgresClient) GetValidatorAgreementRates(
 	// within the given time range.
 	query := `
 		WITH top_validators AS (
-			SELECT master_key, COUNT(*) AS agreed_validator_count
-			FROM agreements
-			WHERE agreed = TRUE AND ledger_closed_at BETWEEN $1 AND $2
-			GROUP BY master_key
-			ORDER BY agreed_validator_count DESC
+			SELECT a.master_key,
+			       COUNT(*) FILTER (WHERE a.agreed) * 100.0 / NULLIF(COUNT(*), 0) AS agreement_rate,
+			       COUNT(*) FILTER (WHERE a.agreed) AS agreed_count,
+			       ROW_NUMBER() OVER (
+			           ORDER BY COUNT(*) FILTER (WHERE a.agreed) * 100.0 / NULLIF(COUNT(*), 0) DESC,
+			                    COUNT(*) FILTER (WHERE a.agreed) DESC
+			       ) AS rank
+			FROM agreements a
+			LEFT JOIN validator_manifests vm ON a.master_key = vm.master_key
+			WHERE a.ledger_closed_at BETWEEN $1 AND $2
+			  AND ($5 = FALSE OR vm.is_unl = TRUE)
+			GROUP BY a.master_key
+			ORDER BY agreement_rate DESC, agreed_count DESC
 			LIMIT $3 OFFSET $4
 		)
 		SELECT
@@ -55,13 +65,13 @@ func (p *PostgresClient) GetValidatorAgreementRates(
 		JOIN top_validators t ON a.master_key = t.master_key
 		LEFT JOIN validator_manifests vm ON a.master_key = vm.master_key
 		WHERE a.ledger_closed_at BETWEEN $1 AND $2
-		GROUP BY date_trunc('minute', a.ledger_closed_at), a.master_key, vm.domain
-		ORDER BY time, validator
+		GROUP BY date_trunc('minute', a.ledger_closed_at), a.master_key, vm.domain, t.rank
+		ORDER BY time, t.rank
 	`
 
 	// Execute query.
 	rows, err := p.db.QueryContext(ctx, query, options.StartTime, options.EndTime,
-		options.Limit, options.Offset)
+		options.Limit, options.Offset, options.UNLOnly)
 	if err != nil {
 		return AgreementRatesData{}, fmt.Errorf("error in QueryContext call: %w", err)
 	}

@@ -41,9 +41,10 @@ func (h *Handler) handleValidatorAgmtHeatmap(w http.ResponseWriter, r *http.Requ
 	q := r.URL.Query()
 	limitStr, offsetStr := q.Get("limit"), q.Get("offset")
 	startTimeStr, endTimeStr := q.Get("startTime"), q.Get("endTime")
+	unlOnly := q.Get("unlOnly")
 
 	// Parse query parameters into concrete types.
-	options, err := parseHeatmapOptions(limitStr, offsetStr, startTimeStr, endTimeStr)
+	options, err := parseHeatmapOptions(limitStr, offsetStr, startTimeStr, endTimeStr, unlOnly)
 	if err != nil {
 		slog.ErrorContext(ctx, "invalid query parameters", "error", err)
 		httputils.WriteError(w, httputils.BadRequest().WithReasonErr(err))
@@ -119,13 +120,21 @@ func transformLedgerIntervalsToChart(data []store.LedgerCloseInterval) ledgerClo
 // into a heatmap format that Apache ECharts can render.
 func transformAgreementRatesToHeatmap(data store.AgreementRatesData) heatmapResponse {
 	// Sets for extract unique times and validators.
-	timeSet, validatorSet := map[string]struct{}{}, map[string]struct{}{}
+	timeSet := map[string]struct{}{}
+	validatorOrder := []string{} // Preserve validator order from SQL query
+	validatorSeen := map[string]bool{}
 
-	// Populate sets.
+	// Populate sets. The database results are ordered by time, then by validator rank
+	// (agreed_validator_count DESC). We preserve first-occurrence order so that yAxis
+	// reflects performance-based ordering (best-performing validator first).
 	for _, row := range data.Rates {
 		timeStr := row.Time.Format("2006-01-02 15:04")
 		timeSet[timeStr] = struct{}{}
-		validatorSet[row.Validator] = struct{}{}
+
+		if !validatorSeen[row.Validator] {
+			validatorOrder = append(validatorOrder, row.Validator)
+			validatorSeen[row.Validator] = true
+		}
 	}
 
 	// Convert sets to arrays since Echarts expects xAxis and yAxis arrays.
@@ -135,10 +144,11 @@ func transformAgreementRatesToHeatmap(data store.AgreementRatesData) heatmapResp
 	}
 	slices.Sort(xAxis) // Works because we're using lexicographically sortable time format.
 
-	var yAxis []string
-	for v := range validatorSet {
-		yAxis = append(yAxis, v)
-	}
+	// Reverse the validator order so that the best-performing validator appears at the top
+	// of the heatmap. ECharts renders yAxis categories bottom-to-top (index 0 = bottom),
+	// so the last element in the array is displayed at the top.
+	slices.Reverse(validatorOrder)
+	yAxis := validatorOrder
 
 	// Build reverse index maps for O(1) lookups. These are required because the "data" field in
 	// the response requires index values of the xAxis and yAxis arrays.
@@ -197,7 +207,7 @@ func parseTimeRange(startTimeStr, endTimeStr string) (time.Time, time.Time, erro
 // parseHeatmapOptions parses and validates all query paramters of the heatmap API.
 // It also handles defaults.
 func parseHeatmapOptions(
-	limitStr, offsetStr, startTimeStr, endTimeStr string,
+	limitStr, offsetStr, startTimeStr, endTimeStr, unlOnlyStr string,
 ) (store.ValidatorAgreementHeatmapOptions, error) {
 	// Default limit and offset.
 	if limitStr == "" {
@@ -205,6 +215,9 @@ func parseHeatmapOptions(
 	}
 	if offsetStr == "" {
 		offsetStr = "0"
+	}
+	if unlOnlyStr == "" {
+		unlOnlyStr = "false"
 	}
 
 	parsedLimit, err := strconv.ParseUint(limitStr, 10, 64)
@@ -222,10 +235,17 @@ func parseHeatmapOptions(
 		return store.ValidatorAgreementHeatmapOptions{}, err
 	}
 
+	unlOnly, err := strconv.ParseBool(unlOnlyStr)
+	if err != nil {
+		return store.ValidatorAgreementHeatmapOptions{},
+			fmt.Errorf("unlOnly flag is invalid: %w", err)
+	}
+
 	return store.ValidatorAgreementHeatmapOptions{
 		StartTime: startTime,
 		EndTime:   endTime,
 		Limit:     uint(parsedLimit),
 		Offset:    uint(parsedOffset),
+		UNLOnly:   unlOnly,
 	}, nil
 }

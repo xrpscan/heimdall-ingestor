@@ -53,4 +53,6 @@ type ValidatorAgreementHeatmapOptions struct {
 
 	Limit  uint
 	Offset uint
+
+	UNLOnly bool
 }
