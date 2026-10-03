@@ -51,8 +51,5 @@ type ValidatorAgreementHeatmapOptions struct {
 	StartTime time.Time
 	EndTime   time.Time
 
-	Limit  uint
-	Offset uint
-
 	UNLOnly bool
 }

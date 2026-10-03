@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -27,6 +28,47 @@ WHERE
 	return total, nil
 }
 
+// GetLedgerCount fetches the count of ledgerClosed messages recevied within the given time window
+// grouped by the 'minute' interval.
+func (p *PostgresClient) GetLedgerCount(
+	ctx context.Context, startTime, endTime time.Time,
+) (map[time.Time]int, error) {
+	query := `
+	SELECT
+		date_trunc('minute', l.observer_created_at) AS time,
+		COUNT(*)
+	FROM ledger l
+	WHERE l.observer_created_at BETWEEN $1 AND $2
+	GROUP BY date_trunc('minute', l.observer_created_at)
+	ORDER BY time;
+	`
+
+	// Execute query.
+	rows, err := p.db.QueryContext(ctx, query, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("error in QueryContext call: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	result := map[time.Time]int{}
+	for rows.Next() {
+		var tim time.Time
+		var count int
+		if err := rows.Scan(&tim, &count); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		result[tim] = count
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	return result, nil
+}
+
 func (p *PostgresClient) GetValidatorAgreementRates(
 	ctx context.Context, options ValidatorAgreementHeatmapOptions,
 ) (AgreementRatesData, error) {
@@ -35,43 +77,33 @@ func (p *PostgresClient) GetValidatorAgreementRates(
 		return AgreementRatesData{}, fmt.Errorf("failed to get total count: %w", err)
 	}
 
+	// Required so the caller can calculate agreement percentages.
+	ledgerCounts, err := p.GetLedgerCount(ctx, options.StartTime, options.EndTime)
+	if err != nil {
+		return AgreementRatesData{}, fmt.Errorf("failed to get ledger counts: %w", err)
+	}
+
 	// TODO: For now, the time bucket is always a minute (see date_trunc in the query). Replace it
 	// smarter bucketing derived from the time duration (endTime - startTime).
 	//
 	// This query yields the list of agreement rates (in %) for every minute, for every validator,
 	// within the given time range.
 	query := `
-		WITH top_validators AS (
-			SELECT a.master_key,
-			       COUNT(*) FILTER (WHERE a.agreed) * 100.0 / NULLIF(COUNT(*), 0) AS agreement_rate,
-			       COUNT(*) FILTER (WHERE a.agreed) AS agreed_count,
-			       ROW_NUMBER() OVER (
-			           ORDER BY COUNT(*) FILTER (WHERE a.agreed) * 100.0 / NULLIF(COUNT(*), 0) DESC,
-			                    COUNT(*) FILTER (WHERE a.agreed) DESC
-			       ) AS rank
-			FROM agreements a
-			LEFT JOIN validator_manifests vm ON a.master_key = vm.master_key
-			WHERE a.ledger_closed_at BETWEEN $1 AND $2
-			  AND ($5 = FALSE OR vm.is_unl = TRUE)
-			GROUP BY a.master_key
-			ORDER BY agreement_rate DESC, agreed_count DESC
-			LIMIT $3 OFFSET $4
-		)
 		SELECT
 		  date_trunc('minute', a.ledger_closed_at) AS time,
-		  CASE WHEN vm.domain > '' THEN vm.domain ELSE a.master_key END AS validator,
-		  COUNT(*) FILTER (WHERE a.agreed) * 100.0 / NULLIF(COUNT(*), 0) AS agreement_percent
+		  a.master_key,
+		  vm.domain,
+		  COUNT(*) FILTER (WHERE a.agreed)
 		FROM agreements a
-		JOIN top_validators t ON a.master_key = t.master_key
 		LEFT JOIN validator_manifests vm ON a.master_key = vm.master_key
 		WHERE a.ledger_closed_at BETWEEN $1 AND $2
-		GROUP BY date_trunc('minute', a.ledger_closed_at), a.master_key, vm.domain, t.rank
-		ORDER BY time, t.rank
+		AND ($3 = FALSE OR vm.is_unl = TRUE)
+		GROUP BY date_trunc('minute', a.ledger_closed_at), a.master_key, vm.domain
+		ORDER BY time;
 	`
 
 	// Execute query.
-	rows, err := p.db.QueryContext(ctx, query, options.StartTime, options.EndTime,
-		options.Limit, options.Offset, options.UNLOnly)
+	rows, err := p.db.QueryContext(ctx, query, options.StartTime, options.EndTime, options.UNLOnly)
 	if err != nil {
 		return AgreementRatesData{}, fmt.Errorf("error in QueryContext call: %w", err)
 	}
@@ -79,20 +111,57 @@ func (p *PostgresClient) GetValidatorAgreementRates(
 	defer func() { _ = rows.Close() }()
 
 	// Decode results.
-	var results []AgreementRate
+	results := map[string]AgreementCounts{}
 	for rows.Next() {
-		var row AgreementRate
-		if err := rows.Scan(&row.Time, &row.Validator, &row.AgreementPercent); err != nil {
+		var masterKey, domain string
+		var row TimedInt
+		if err := rows.Scan(&row.Time, &masterKey, &domain, &row.Value); err != nil {
 			return AgreementRatesData{}, fmt.Errorf("failed to scan row: %w", err)
 		}
-		results = append(results, row)
+
+		if _, exists := results[masterKey]; !exists {
+			results[masterKey] = AgreementCounts{
+				MasterKey: masterKey,
+				Domain:    domain,
+			}
+		}
+
+		item := results[masterKey]
+		if item.Domain == "" && domain != "" {
+			item.Domain = domain
+		}
+		item.Agreement = append(item.Agreement, row)
+		results[masterKey] = item
 	}
 
 	if err := rows.Err(); err != nil {
 		return AgreementRatesData{}, fmt.Errorf("row iteration error: %w", err)
 	}
 
-	return AgreementRatesData{Rates: results, TotalValidatorCount: totalCount}, nil
+	// Sum up agreement count for all validators to rank their performance.
+	agreementCount := map[string]int{}
+	for _, item := range results {
+		for _, v := range item.Agreement {
+			agreementCount[item.MasterKey] += v.Value
+		}
+	}
+
+	// The slice that will be sorted (currently unsorted).
+	counts := make([]AgreementCounts, 0, len(results))
+	for _, data := range results {
+		counts = append(counts, data)
+	}
+
+	// Sort as per validator performance.
+	slices.SortStableFunc(counts, func(a AgreementCounts, b AgreementCounts) int {
+		return agreementCount[b.MasterKey] - agreementCount[a.MasterKey]
+	})
+
+	return AgreementRatesData{
+		AgreementCounts:     counts,
+		LedgerCounts:        ledgerCounts,
+		TotalValidatorCount: totalCount,
+	}, nil
 }
 
 func (p *PostgresClient) GetLedgerCloseIntervals(

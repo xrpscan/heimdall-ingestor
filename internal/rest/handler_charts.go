@@ -38,19 +38,21 @@ func (h *Handler) handleValidatorAgmtHeatmap(w http.ResponseWriter, r *http.Requ
 	ctx := r.Context()
 
 	// Read query parameters.
+	// Note that due to there being only ~150 validators, this is not a paginated API,
+	// so limit and skip are not accepted.
 	q := r.URL.Query()
-	limitStr, offsetStr := q.Get("limit"), q.Get("offset")
 	startTimeStr, endTimeStr := q.Get("startTime"), q.Get("endTime")
 	unlOnly := q.Get("unlOnly")
 
 	// Parse query parameters into concrete types.
-	options, err := parseHeatmapOptions(limitStr, offsetStr, startTimeStr, endTimeStr, unlOnly)
+	options, err := parseHeatmapOptions(startTimeStr, endTimeStr, unlOnly)
 	if err != nil {
 		slog.ErrorContext(ctx, "invalid query parameters", "error", err)
 		httputils.WriteError(w, httputils.BadRequest().WithReasonErr(err))
 		return
 	}
 
+	// Database call to fetch agreement counts and ledger counts.
 	data, err := h.database.GetValidatorAgreementRates(ctx, options)
 	if err != nil {
 		slog.ErrorContext(ctx, "error in GetValidatorAgreementRates call", "error", err)
@@ -61,9 +63,8 @@ func (h *Handler) handleValidatorAgmtHeatmap(w http.ResponseWriter, r *http.Requ
 	// Transform to ECharts format.
 	resp := transformAgreementRatesToHeatmap(data)
 	resp.Pagination = pagination{
+		// TODO: Confirm if this has any usage left.
 		TotalCount: data.TotalValidatorCount,
-		Limit:      options.Limit,
-		Offset:     options.Offset,
 	}
 
 	httputils.WriteJson(w, http.StatusOK, nil, resp)
@@ -119,36 +120,28 @@ func transformLedgerIntervalsToChart(data []store.LedgerCloseInterval) ledgerClo
 // transformAgreementRatesToHeatmap transforms the list agreement rates coming from the database
 // into a heatmap format that Apache ECharts can render.
 func transformAgreementRatesToHeatmap(data store.AgreementRatesData) heatmapResponse {
-	// Sets for extract unique times and validators.
-	timeSet := map[string]struct{}{}
-	validatorOrder := []string{} // Preserve validator order from SQL query
-	validatorSeen := map[string]bool{}
+	// Will hold all the validator domain/master-key.
+	yAxis := make([]string, len(data.AgreementCounts))
+	// Required to pre-allocate the chart data slice.
+	var totalEntries int
 
-	// Populate sets. The database results are ordered by time, then by validator rank
-	// (agreed_validator_count DESC). We preserve first-occurrence order so that yAxis
-	// reflects performance-based ordering (best-performing validator first).
-	for _, row := range data.Rates {
-		timeStr := row.Time.Format("2006-01-02 15:04")
-		timeSet[timeStr] = struct{}{}
+	// Populate yAxis with validator domain/master-key.
+	for i, item := range data.AgreementCounts {
+		totalEntries += len(item.Agreement)
 
-		if !validatorSeen[row.Validator] {
-			validatorOrder = append(validatorOrder, row.Validator)
-			validatorSeen[row.Validator] = true
+		if item.Domain != "" {
+			yAxis[i] = item.Domain
+		} else {
+			yAxis[i] = item.MasterKey
 		}
 	}
 
-	// Convert sets to arrays since Echarts expects xAxis and yAxis arrays.
+	// Will hold all the time values in order.
 	var xAxis []string
-	for t := range timeSet {
-		xAxis = append(xAxis, t)
+	for t := range data.LedgerCounts {
+		xAxis = append(xAxis, t.Format("2006-01-02 15:04"))
 	}
-	slices.Sort(xAxis) // Works because we're using lexicographically sortable time format.
-
-	// Reverse the validator order so that the best-performing validator appears at the top
-	// of the heatmap. ECharts renders yAxis categories bottom-to-top (index 0 = bottom),
-	// so the last element in the array is displayed at the top.
-	slices.Reverse(validatorOrder)
-	yAxis := validatorOrder
+	slices.Sort(xAxis)
 
 	// Build reverse index maps for O(1) lookups. These are required because the "data" field in
 	// the response requires index values of the xAxis and yAxis arrays.
@@ -163,13 +156,29 @@ func transformAgreementRatesToHeatmap(data store.AgreementRatesData) heatmapResp
 	}
 
 	// Transform each row to [xIndex, yIndex, value]
-	chartData := make([][3]any, 0, len(data.Rates))
-	for _, rate := range data.Rates {
-		timeStr := rate.Time.Format("2006-01-02 15:04")
+	chartData := make([][3]any, 0, totalEntries)
+	for _, item := range data.AgreementCounts {
+		// Index for the domain or the master-key.
+		yIdx, exists := validatorIndex[item.Domain]
+		if !exists {
+			yIdx = validatorIndex[item.MasterKey]
+		}
 
-		xIdx := timeIndex[timeStr]
-		yIdx := validatorIndex[rate.Validator]
-		chartData = append(chartData, [3]any{xIdx, yIdx, rate.AgreementPercent})
+		for _, ag := range item.Agreement {
+			// Calculate percent by diving by the total ledger count in that interval.
+			var agreementPercent float64
+			ledgerCount := data.LedgerCounts[ag.Time]
+			if ledgerCount == 0 {
+				agreementPercent = 0
+			} else {
+				agreementPercent = float64(ag.Value) * 100 / float64(ledgerCount)
+			}
+
+			// Index for the time.
+			timeStr := ag.Time.Format("2006-01-02 15:04")
+			xIdx := timeIndex[timeStr]
+			chartData = append(chartData, [3]any{xIdx, yIdx, agreementPercent})
+		}
 	}
 
 	return heatmapResponse{Data: chartData, XAxis: xAxis, YAxis: yAxis}
@@ -207,27 +216,10 @@ func parseTimeRange(startTimeStr, endTimeStr string) (time.Time, time.Time, erro
 // parseHeatmapOptions parses and validates all query paramters of the heatmap API.
 // It also handles defaults.
 func parseHeatmapOptions(
-	limitStr, offsetStr, startTimeStr, endTimeStr, unlOnlyStr string,
+	startTimeStr, endTimeStr, unlOnlyStr string,
 ) (store.ValidatorAgreementHeatmapOptions, error) {
-	// Default limit and offset.
-	if limitStr == "" {
-		limitStr = "10"
-	}
-	if offsetStr == "" {
-		offsetStr = "0"
-	}
 	if unlOnlyStr == "" {
 		unlOnlyStr = "false"
-	}
-
-	parsedLimit, err := strconv.ParseUint(limitStr, 10, 64)
-	if err != nil {
-		return store.ValidatorAgreementHeatmapOptions{}, fmt.Errorf("limit is invalid: %w", err)
-	}
-
-	parsedOffset, err := strconv.ParseUint(offsetStr, 10, 64)
-	if err != nil {
-		return store.ValidatorAgreementHeatmapOptions{}, fmt.Errorf("offset is invalid: %w", err)
 	}
 
 	startTime, endTime, err := parseTimeRange(startTimeStr, endTimeStr)
@@ -244,8 +236,6 @@ func parseHeatmapOptions(
 	return store.ValidatorAgreementHeatmapOptions{
 		StartTime: startTime,
 		EndTime:   endTime,
-		Limit:     uint(parsedLimit),
-		Offset:    uint(parsedOffset),
 		UNLOnly:   unlOnly,
 	}, nil
 }

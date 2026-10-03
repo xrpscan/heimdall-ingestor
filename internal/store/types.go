@@ -168,16 +168,22 @@ type ValidatorManifest struct {
 
 // AgreementRatesData represents validator agreement rate data with total count for pagination.
 type AgreementRatesData struct {
-	Rates []AgreementRate
+	AgreementCounts []AgreementCounts
+	LedgerCounts    map[time.Time]int
 	// For pagination since the GetValidatorAgreementHeatmap allows pagination on validators.
 	TotalValidatorCount uint
 }
 
-// AgreementRate shows the agreement rate of a validator at a point in time.
-type AgreementRate struct {
-	Time             time.Time
-	Validator        string  // domain or master_key prefix
-	AgreementPercent float64 // percentage (0-100)
+// AgreementCounts shows the agreement rate of a validator over time.
+type AgreementCounts struct {
+	MasterKey string
+	Domain    string
+	Agreement []TimedInt
+}
+
+type TimedInt struct {
+	Time  time.Time
+	Value int
 }
 
 // LedgerCloseInterval represents the time interval between consecutive ledger closes.
