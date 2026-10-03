@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -41,11 +42,11 @@ func (h *Handler) handleValidatorAgmtHeatmap(w http.ResponseWriter, r *http.Requ
 	// Note that due to there being only ~150 validators, this is not a paginated API,
 	// so limit and skip are not accepted.
 	q := r.URL.Query()
-	startTimeStr, endTimeStr := q.Get("startTime"), q.Get("endTime")
+	startTimeStr, endTimeStr, bucketStr := q.Get("startTime"), q.Get("endTime"), q.Get("bucket")
 	unlOnly := q.Get("unlOnly")
 
 	// Parse query parameters into concrete types.
-	options, err := parseHeatmapOptions(startTimeStr, endTimeStr, unlOnly)
+	options, err := parseHeatmapOptions(ctx, startTimeStr, endTimeStr, bucketStr, unlOnly)
 	if err != nil {
 		slog.ErrorContext(ctx, "invalid query parameters", "error", err)
 		httputils.WriteError(w, httputils.BadRequest().WithReasonErr(err))
@@ -216,7 +217,7 @@ func parseTimeRange(startTimeStr, endTimeStr string) (time.Time, time.Time, erro
 // parseHeatmapOptions parses and validates all query paramters of the heatmap API.
 // It also handles defaults.
 func parseHeatmapOptions(
-	startTimeStr, endTimeStr, unlOnlyStr string,
+	ctx context.Context, startTimeStr, endTimeStr, bucketStr, unlOnlyStr string,
 ) (store.ValidatorAgreementHeatmapOptions, error) {
 	if unlOnlyStr == "" {
 		unlOnlyStr = "false"
@@ -225,6 +226,34 @@ func parseHeatmapOptions(
 	startTime, endTime, err := parseTimeRange(startTimeStr, endTimeStr)
 	if err != nil {
 		return store.ValidatorAgreementHeatmapOptions{}, err
+	}
+
+	// Default values for bucket.
+	if bucketStr == "" {
+		dur := endTime.Sub(startTime)
+		if dur < time.Hour {
+			bucketStr = string(store.BucketMinute)
+		} else if dur < time.Hour*24 {
+			bucketStr = string(store.BucketHour)
+		} else if dur < time.Hour*24*7 {
+			bucketStr = string(store.BucketDay)
+		} else if dur < time.Hour*24*30 {
+			bucketStr = string(store.BucketWeek)
+		} else if dur < time.Hour*24*30*4 {
+			bucketStr = string(store.BucketMonth)
+		} else if dur < time.Hour*24*365 {
+			bucketStr = string(store.BucketQuarter)
+		} else {
+			bucketStr = string(store.BucketYear)
+		}
+
+		slog.InfoContext(ctx, "bucket query param was not provided, calculated automatically",
+			"calculatedValue", bucketStr)
+	}
+
+	if !slices.Contains(store.AllBuckets(), store.Bucket(bucketStr)) {
+		return store.ValidatorAgreementHeatmapOptions{},
+			fmt.Errorf("bucket is invalid, expected: %v", store.AllBuckets())
 	}
 
 	unlOnly, err := strconv.ParseBool(unlOnlyStr)
@@ -236,6 +265,7 @@ func parseHeatmapOptions(
 	return store.ValidatorAgreementHeatmapOptions{
 		StartTime: startTime,
 		EndTime:   endTime,
+		Bucket:    store.Bucket(bucketStr),
 		UNLOnly:   unlOnly,
 	}, nil
 }

@@ -50,6 +50,7 @@ type Client interface {
 type ValidatorAgreementHeatmapOptions struct {
 	StartTime time.Time
 	EndTime   time.Time
+	Bucket    Bucket
 
 	UNLOnly bool
 }

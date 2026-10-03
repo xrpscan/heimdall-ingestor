@@ -30,3 +30,9 @@ func buildValueString(rowCount, colCount int) string {
 	// Remove trailing comma-space from the earlier string-building and that's it.
 	return strings.TrimSuffix(valueString, ", ")
 }
+
+// AllBuckets is a convenient way to get the list all valid buckets.
+func AllBuckets() []Bucket {
+	return []Bucket{BucketSecond, BucketMinute, BucketHour, BucketDay,
+		BucketWeek, BucketMonth, BucketQuarter, BucketYear}
+}

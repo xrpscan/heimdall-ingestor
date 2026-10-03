@@ -31,20 +31,20 @@ WHERE
 // GetLedgerCount fetches the count of ledgerClosed messages recevied within the given time window
 // grouped by the 'minute' interval.
 func (p *PostgresClient) GetLedgerCount(
-	ctx context.Context, startTime, endTime time.Time,
+	ctx context.Context, startTime, endTime time.Time, bucket Bucket,
 ) (map[time.Time]int, error) {
 	query := `
 	SELECT
-		date_trunc('minute', l.observer_created_at) AS time,
+		date_trunc($1, l.observer_created_at) AS time,
 		COUNT(*)
 	FROM ledger l
-	WHERE l.observer_created_at BETWEEN $1 AND $2
-	GROUP BY date_trunc('minute', l.observer_created_at)
+	WHERE l.observer_created_at BETWEEN $2 AND $3
+	GROUP BY date_trunc($1, l.observer_created_at)
 	ORDER BY time;
 	`
 
 	// Execute query.
-	rows, err := p.db.QueryContext(ctx, query, startTime, endTime)
+	rows, err := p.db.QueryContext(ctx, query, string(bucket), startTime, endTime)
 	if err != nil {
 		return nil, fmt.Errorf("error in QueryContext call: %w", err)
 	}
@@ -78,7 +78,7 @@ func (p *PostgresClient) GetValidatorAgreementRates(
 	}
 
 	// Required so the caller can calculate agreement percentages.
-	ledgerCounts, err := p.GetLedgerCount(ctx, options.StartTime, options.EndTime)
+	ledgerCounts, err := p.GetLedgerCount(ctx, options.StartTime, options.EndTime, options.Bucket)
 	if err != nil {
 		return AgreementRatesData{}, fmt.Errorf("failed to get ledger counts: %w", err)
 	}
@@ -90,20 +90,21 @@ func (p *PostgresClient) GetValidatorAgreementRates(
 	// within the given time range.
 	query := `
 		SELECT
-		  date_trunc('minute', a.ledger_closed_at) AS time,
+		  date_trunc($1, a.ledger_closed_at) AS time,
 		  a.master_key,
 		  vm.domain,
 		  COUNT(*) FILTER (WHERE a.agreed)
 		FROM agreements a
 		LEFT JOIN validator_manifests vm ON a.master_key = vm.master_key
-		WHERE a.ledger_closed_at BETWEEN $1 AND $2
-		AND ($3 = FALSE OR vm.is_unl = TRUE)
-		GROUP BY date_trunc('minute', a.ledger_closed_at), a.master_key, vm.domain
+		WHERE a.ledger_closed_at BETWEEN $2 AND $3
+		AND ($4 = FALSE OR vm.is_unl = TRUE)
+		GROUP BY date_trunc($1, a.ledger_closed_at), a.master_key, vm.domain
 		ORDER BY time;
 	`
 
 	// Execute query.
-	rows, err := p.db.QueryContext(ctx, query, options.StartTime, options.EndTime, options.UNLOnly)
+	rows, err := p.db.QueryContext(ctx, query, string(options.Bucket),
+		options.StartTime, options.EndTime, options.UNLOnly)
 	if err != nil {
 		return AgreementRatesData{}, fmt.Errorf("error in QueryContext call: %w", err)
 	}

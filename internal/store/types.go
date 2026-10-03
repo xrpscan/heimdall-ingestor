@@ -6,6 +6,20 @@ import (
 	"time"
 )
 
+// Bucket provides a type for the possible inputs for PostgreSQL's DATE_TRUNC function.
+type Bucket string
+
+const (
+	BucketSecond  Bucket = "second"
+	BucketMinute  Bucket = "minute"
+	BucketHour    Bucket = "hour"
+	BucketDay     Bucket = "day"
+	BucketWeek    Bucket = "week"
+	BucketMonth   Bucket = "month"
+	BucketQuarter Bucket = "quarter"
+	BucketYear    Bucket = "year"
+)
+
 // ValidationMessage represents a single row of the validations table.
 type ValidationMessage struct {
 	ID int64
