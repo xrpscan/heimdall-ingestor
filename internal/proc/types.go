@@ -23,3 +23,10 @@ type unlValidatorInfo struct {
 		Manifest            string `json:"manifest"`
 	} `json:"validators"`
 }
+
+// validatorTOML is the schema of the file present at https://<domain>/.well-known/xrp-ledger.toml
+type validatorTOML struct {
+	Validators []struct {
+		PublicKey string `toml:"public_key"`
+	} `toml:"VALIDATORS"`
+}

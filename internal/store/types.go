@@ -173,11 +173,12 @@ func (l LedgerMessagePayload) LedgerIndexParsed() (int64, error) {
 
 // ValidatorManifest represents a single row from the validator_manifests table.
 type ValidatorManifest struct {
-	MasterKey string
-	Domain    string
-	IsUNL     bool
-	CreatedAt Timestamp
-	UpdatedAt Timestamp
+	MasterKey      string
+	Domain         string
+	DomainVerified bool
+	IsUNL          bool
+	CreatedAt      Timestamp
+	UpdatedAt      Timestamp
 }
 
 // AgreementRatesData represents validator agreement rate data with total count for pagination.

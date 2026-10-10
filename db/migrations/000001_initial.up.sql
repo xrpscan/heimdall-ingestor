@@ -43,11 +43,12 @@ CREATE TABLE ledger (
 -- Caches validator manifest data fetched from xrpld. Keyed by master_key.
 -- Upserted periodically by the ManifestUpdater process.
 CREATE TABLE validator_manifests (
-    master_key  TEXT    PRIMARY KEY,
-    domain      TEXT,
-    is_unl      BOOLEAN   NOT NULL DEFAULT FALSE,
-    created_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    master_key      TEXT    PRIMARY KEY,
+    domain          TEXT,
+    domain_verified BOOLEAN     NOT NULL DEFAULT FALSE,
+    is_unl          BOOLEAN     NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMP   WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP   WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Auto-update updated_at on validator_manifests row updates.

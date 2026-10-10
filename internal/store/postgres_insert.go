@@ -128,15 +128,15 @@ func (p *PostgresClient) queryInsertLedgerMessagesIfNotExist(
 func (p *PostgresClient) queryUpsertValidatorManifests(
 	manifests []ValidatorManifest,
 ) (string, []any) {
-	var rowCount, columnCount = len(manifests), 2
+	var rowCount, columnCount = len(manifests), 3
 	args := make([]any, rowCount*columnCount)
 
 	for i := 0; i < rowCount*columnCount; i += columnCount {
 		item := manifests[i/columnCount]
-		args[i], args[i+1] = item.MasterKey, item.Domain
+		args[i], args[i+1], args[i+2] = item.MasterKey, item.Domain, item.DomainVerified
 	}
 
-	return `INSERT INTO validator_manifests (master_key, domain) VALUES ` +
+	return `INSERT INTO validator_manifests (master_key, domain, domain_verified) VALUES ` +
 		buildValueString(rowCount, columnCount) + ` ON CONFLICT (master_key)
-		DO UPDATE SET domain = EXCLUDED.domain;`, args
+		DO UPDATE SET domain = EXCLUDED.domain, domain_verified = EXCLUDED.domain_verified;`, args
 }

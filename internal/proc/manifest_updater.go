@@ -3,10 +3,15 @@ package proc
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
 	"github.com/xrpscan/heimdall-ingestor/internal/store"
 	"github.com/xrpscan/heimdall-ingestor/pkg/xrpld"
 )
@@ -20,6 +25,7 @@ const (
 type ManifestUpdater struct {
 	database    store.Client
 	xrp         xrpld.Interface
+	httpClient  *http.Client
 	runInterval time.Duration
 	maxAge      time.Duration
 
@@ -37,6 +43,7 @@ func NewManifestUpdater(
 	return &ManifestUpdater{
 		database:    db,
 		xrp:         xrp,
+		httpClient:  &http.Client{},
 		runInterval: runInterval,
 		maxAge:      maxAge,
 		mutex:       sync.RWMutex{},
@@ -94,6 +101,17 @@ func (m *ManifestUpdater) updateValidators(ctx context.Context) error {
 	// Fetch all manifests.
 	manifests := m.getManifestsFromXRPLD(ctx, stale)
 
+	// Collect domains for verification.
+	domains := make([]string, 0, len(manifests))
+	for _, m := range manifests {
+		if m.Domain != "" {
+			domains = append(domains, m.Domain)
+		}
+	}
+
+	// Fetch all validator TOML files for verification.
+	tomls := m.getAllValidatorTOML(ctx, domains)
+
 	// Validators to be unregistered and mark updated locally.
 	doneValidators := make([]string, 0, len(stale))
 	// Arguments for the database update call.
@@ -105,9 +123,30 @@ func (m *ManifestUpdater) updateValidators(ctx context.Context) error {
 			slog.WarnContext(ctx, "domain is empty for validator", "masterKey", manifest.MasterKey)
 		}
 
+		// Mark validator manifest as updated.
 		doneValidators = append(doneValidators, manifest.MasterKey)
+
+		// Extract master key from the validator toml file.
+		var keyAsPerToml string
+		if toml := tomls[manifest.Domain]; toml != nil {
+			keyAsPerToml = toml.Validators[0].PublicKey
+		}
+
+		// Validator domain verification.
+		verified := keyAsPerToml != "" && keyAsPerToml == manifest.MasterKey
+		if !verified {
+			slog.InfoContext(ctx, "validator domain is unverified", "domain", manifest.Domain,
+				"masterKey", manifest.MasterKey, "masterKeyInToml", keyAsPerToml)
+		} else {
+			slog.InfoContext(ctx, "successfully verified validator domain",
+				"domain", manifest.Domain, "masterKey", manifest.MasterKey,
+				"masterKeyInToml", keyAsPerToml)
+		}
+
 		databaseArgs = append(databaseArgs, store.ValidatorManifest{
-			MasterKey: manifest.MasterKey, Domain: manifest.Domain,
+			MasterKey:      manifest.MasterKey,
+			Domain:         manifest.Domain,
+			DomainVerified: verified,
 		})
 	}
 
@@ -220,4 +259,89 @@ func (m *ManifestUpdater) markValidatorsUpdated(mKeys []string) {
 	for _, mKey := range mKeys {
 		m.lastUpdated[mKey] = now
 	}
+}
+
+// getAllValidatorTOML invokes [getValidatorTOML] in parallel for the all given domains and returns
+// a mapping of domain to TOML. For the call fails for a validator, their TOML is nil.
+func (m *ManifestUpdater) getAllValidatorTOML(
+	ctx context.Context, domains []string,
+) map[string]*validatorTOML {
+	results := make(chan func() (string, *validatorTOML, error), len(domains))
+
+	// Parallel calls.
+	for _, d := range domains {
+		go func() {
+			toml, err := m.getValidatorTOML(ctx, d)
+			if err != nil {
+				results <- func() (string, *validatorTOML, error) { return d, nil, err }
+			} else {
+				results <- func() (string, *validatorTOML, error) { return d, &toml, nil }
+			}
+		}()
+	}
+
+	// Result collection.
+	mapping := map[string]*validatorTOML{}
+	for range domains {
+		d, toml, err := (<-results)()
+		if err != nil {
+			slog.ErrorContext(ctx, "toml call failed for a validator", "domain", d, "error", err)
+			continue
+		}
+
+		mapping[d] = toml
+	}
+
+	slog.InfoContext(ctx, "successfully fetched toml files for validators", "count", len(mapping))
+	return mapping
+}
+
+// getValidatorTOML downloads the TOML file present at https://<domain>/.well-known/xrp-ledger.toml,
+// parses it and returns the data.
+func (m *ManifestUpdater) getValidatorTOML(
+	ctx context.Context, domain string,
+) (validatorTOML, error) {
+	domain = strings.TrimPrefix(domain, "https://")
+
+	endpoint, err := url.JoinPath("https://", domain, ".well-known/xrp-ledger.toml")
+	if err != nil {
+		return validatorTOML{}, fmt.Errorf("failed to create endpoint url: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return validatorTOML{}, fmt.Errorf("failed to create http request: %w", err)
+	}
+
+	// Execute request.
+	response, err := m.httpClient.Do(req)
+	if err != nil {
+		return validatorTOML{}, fmt.Errorf("failed to execute http request: %w", err)
+	}
+
+	defer func() { _ = response.Body.Close() }()
+
+	// Handle non-success responses.
+	if response.StatusCode/100 != 2 {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 1024*1024))
+		return validatorTOML{}, fmt.Errorf("unexpected response status code: %d, body: %s",
+			response.StatusCode, string(body))
+	}
+
+	// Read the toml data.
+	tomlBytes, err := io.ReadAll(response.Body)
+	if err != nil {
+		return validatorTOML{}, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var target validatorTOML
+	if err := toml.Unmarshal(tomlBytes, &target); err != nil {
+		return validatorTOML{}, fmt.Errorf("failed to unmarshal validator toml: %w, bytes: %s", err, string(tomlBytes))
+	}
+
+	if len(target.Validators) == 0 || target.Validators[0].PublicKey == "" {
+		return validatorTOML{}, fmt.Errorf("toml data seems to be empty")
+	}
+
+	return target, nil
 }
