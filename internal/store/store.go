@@ -31,12 +31,10 @@ type Client interface {
 	// master keys have is_unl set to TRUE and all remaining rows have it set to FALSE.
 	UpdateUNLValidators(ctx context.Context, masterKeys []string) error
 
-	// GetValidatorAgreementRates retrieves agreement rates for all validators (active within the
-	// given time period), for every minute.
-	//
-	// Returns paginated results ordered by validation count (descending).
-	GetValidatorAgreementRates(
-		ctx context.Context, options ValidatorAgreementHeatmapOptions,
+	// GetValidatorAgreementRateBuckets retrieves agreement rates for all validators
+	// (active within the given time period), as per the given time bucket.
+	GetValidatorAgreementRateBuckets(
+		ctx context.Context, options ValidatorAgreementRateBucketOptions,
 	) (AgreementRatesData, error)
 
 	// GetLedgerCloseIntervals retrieves ledger close intervals (time between consecutive ledgers)
@@ -46,8 +44,8 @@ type Client interface {
 	) ([]LedgerCloseInterval, error)
 }
 
-// ValidatorAgreementHeatmapOptions can be used to control the heatmap results.
-type ValidatorAgreementHeatmapOptions struct {
+// ValidatorAgreementRateBucketOptions ...
+type ValidatorAgreementRateBucketOptions struct {
 	StartTime time.Time
 	EndTime   time.Time
 	Bucket    Bucket

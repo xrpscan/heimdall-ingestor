@@ -69,23 +69,21 @@ func (p *PostgresClient) GetLedgerCount(
 	return result, nil
 }
 
-func (p *PostgresClient) GetValidatorAgreementRates(
-	ctx context.Context, options ValidatorAgreementHeatmapOptions,
+func (p *PostgresClient) GetValidatorAgreementRateBuckets(
+	ctx context.Context, options ValidatorAgreementRateBucketOptions,
 ) (AgreementRatesData, error) {
+	// TODO: is this even needed anymore?
 	totalCount, err := p.GetValidatorCount(ctx, options.StartTime, options.EndTime, options.UNLOnly)
 	if err != nil {
 		return AgreementRatesData{}, fmt.Errorf("failed to get total count: %w", err)
 	}
 
-	// Required so the caller can calculate agreement percentages.
+	// Required to calculate agreement percentages.
 	ledgerCounts, err := p.GetLedgerCount(ctx, options.StartTime, options.EndTime, options.Bucket)
 	if err != nil {
 		return AgreementRatesData{}, fmt.Errorf("failed to get ledger counts: %w", err)
 	}
 
-	// TODO: For now, the time bucket is always a minute (see date_trunc in the query). Replace it
-	// smarter bucketing derived from the time duration (endTime - startTime).
-	//
 	// This query yields the list of agreement rates (in %) for every minute, for every validator,
 	// within the given time range.
 	query := `

@@ -35,6 +35,68 @@ type ledgerCloseIntervalResponse struct {
 	LedgerIndices []string  `json:"ledgerIndices"`
 }
 
+func (h *Handler) handleValidatorRating(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Read query parameters.
+	q := r.URL.Query()
+	startTimeStr, endTimeStr := q.Get("startTime"), q.Get("endTime")
+	unlOnlyStr := q.Get("unlOnly")
+
+	startTime, endTime, unlOnly, err := parseRatingOptions(ctx, startTimeStr, endTimeStr, unlOnlyStr)
+	if err != nil {
+		slog.ErrorContext(ctx, "invalid query parameters", "error", err)
+		httputils.WriteError(w, httputils.BadRequest().WithReasonErr(err))
+		return
+	}
+
+	options := store.ValidatorAgreementRateBucketOptions{
+		// Use millenium so only one bucket is returned.
+		Bucket:    store.BucketMillennium,
+		StartTime: startTime,
+		EndTime:   endTime,
+		UNLOnly:   unlOnly,
+	}
+
+	// Database call to fetch agreement counts and ledger counts.
+	data, err := h.database.GetValidatorAgreementRateBuckets(ctx, options)
+	if err != nil {
+		slog.ErrorContext(ctx, "error in GetValidatorAgreementRates call", "error", err)
+		httputils.WriteError(w, httputils.InternalServerError().WithReasonErr(err))
+		return
+	}
+
+	// Update score as per agreement rate.
+	scores := map[string]float64{}
+	for _, item := range data.AgreementCounts {
+		// Defend against index-out-of-bounds.
+		if len(item.Agreement) == 0 {
+			continue
+		}
+
+		// For easier access.
+		t, v := item.Agreement[0].Time, item.Agreement[0].Value
+		// Get ledger count for this bucket.
+		lc, exists := data.LedgerCounts[t]
+		if !exists {
+			continue
+		}
+
+		// Use domain if available, else master key.
+		key := item.Domain
+		if key == "" {
+			key = item.MasterKey
+		}
+
+		// Update score.
+		scores[key] = float64(v) / float64(lc)
+	}
+
+	// TODO: Update score as per domain verification.
+
+	httputils.WriteJson(w, http.StatusOK, nil, scores)
+}
+
 func (h *Handler) handleValidatorAgmtHeatmap(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -54,7 +116,7 @@ func (h *Handler) handleValidatorAgmtHeatmap(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Database call to fetch agreement counts and ledger counts.
-	data, err := h.database.GetValidatorAgreementRates(ctx, options)
+	data, err := h.database.GetValidatorAgreementRateBuckets(ctx, options)
 	if err != nil {
 		slog.ErrorContext(ctx, "error in GetValidatorAgreementRates call", "error", err)
 		httputils.WriteError(w, httputils.InternalServerError().WithReasonErr(err))
@@ -214,18 +276,37 @@ func parseTimeRange(startTimeStr, endTimeStr string) (time.Time, time.Time, erro
 	return time.UnixMilli(parsedStartTime), time.UnixMilli(parsedEndTime), nil
 }
 
-// parseHeatmapOptions parses and validates all query paramters of the heatmap API.
+// parseRatingOptions parses and validates all query paramters of the validator rating API.
 // It also handles defaults.
-func parseHeatmapOptions(
-	ctx context.Context, startTimeStr, endTimeStr, bucketStr, unlOnlyStr string,
-) (store.ValidatorAgreementHeatmapOptions, error) {
+func parseRatingOptions(
+	ctx context.Context, startTimeStr, endTimeStr, unlOnlyStr string,
+) (time.Time, time.Time, bool, error) {
 	if unlOnlyStr == "" {
 		unlOnlyStr = "false"
 	}
 
 	startTime, endTime, err := parseTimeRange(startTimeStr, endTimeStr)
 	if err != nil {
-		return store.ValidatorAgreementHeatmapOptions{}, err
+		return time.Time{}, time.Time{}, false, err
+	}
+
+	unlOnly, err := strconv.ParseBool(unlOnlyStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, false,
+			fmt.Errorf("unlOnly flag is invalid: %w", err)
+	}
+
+	return startTime, endTime, unlOnly, nil
+}
+
+// parseHeatmapOptions parses and validates all query paramters of the heatmap API.
+// It also handles defaults.
+func parseHeatmapOptions(
+	ctx context.Context, startTimeStr, endTimeStr, bucketStr, unlOnlyStr string,
+) (store.ValidatorAgreementRateBucketOptions, error) {
+	startTime, endTime, unlOnly, err := parseRatingOptions(ctx, startTimeStr, endTimeStr, unlOnlyStr)
+	if err != nil {
+		return store.ValidatorAgreementRateBucketOptions{}, err
 	}
 
 	// Default values for bucket.
@@ -252,17 +333,11 @@ func parseHeatmapOptions(
 	}
 
 	if !slices.Contains(store.AllBuckets(), store.Bucket(bucketStr)) {
-		return store.ValidatorAgreementHeatmapOptions{},
+		return store.ValidatorAgreementRateBucketOptions{},
 			fmt.Errorf("bucket is invalid, expected: %v", store.AllBuckets())
 	}
 
-	unlOnly, err := strconv.ParseBool(unlOnlyStr)
-	if err != nil {
-		return store.ValidatorAgreementHeatmapOptions{},
-			fmt.Errorf("unlOnly flag is invalid: %w", err)
-	}
-
-	return store.ValidatorAgreementHeatmapOptions{
+	return store.ValidatorAgreementRateBucketOptions{
 		StartTime: startTime,
 		EndTime:   endTime,
 		Bucket:    store.Bucket(bucketStr),

@@ -10,14 +10,15 @@ import (
 type Bucket string
 
 const (
-	BucketSecond  Bucket = "second"
-	BucketMinute  Bucket = "minute"
-	BucketHour    Bucket = "hour"
-	BucketDay     Bucket = "day"
-	BucketWeek    Bucket = "week"
-	BucketMonth   Bucket = "month"
-	BucketQuarter Bucket = "quarter"
-	BucketYear    Bucket = "year"
+	BucketSecond     Bucket = "second"
+	BucketMinute     Bucket = "minute"
+	BucketHour       Bucket = "hour"
+	BucketDay        Bucket = "day"
+	BucketWeek       Bucket = "week"
+	BucketMonth      Bucket = "month"
+	BucketQuarter    Bucket = "quarter"
+	BucketYear       Bucket = "year"
+	BucketMillennium Bucket = "millennium"
 )
 
 // ValidationMessage represents a single row of the validations table.
