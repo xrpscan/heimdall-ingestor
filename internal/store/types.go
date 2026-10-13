@@ -184,6 +184,8 @@ type ValidatorManifest struct {
 
 // AgreementRatesData represents validator agreement rate data with total count for pagination.
 type AgreementRatesData struct {
+	// Each item in this slice represents one validator.
+	// So, total size is equal to total validator count.
 	AgreementCounts []AgreementCounts
 	LedgerCounts    map[time.Time]int
 	// For pagination since the GetValidatorAgreementHeatmap allows pagination on validators.
@@ -192,9 +194,10 @@ type AgreementRatesData struct {
 
 // AgreementCounts shows the agreement rate of a validator over time.
 type AgreementCounts struct {
-	MasterKey string
-	Domain    string
-	Agreement []TimedInt
+	MasterKey      string
+	Domain         string
+	DomainVerified bool
+	Agreement      []TimedInt
 }
 
 type TimedInt struct {

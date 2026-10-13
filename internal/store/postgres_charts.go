@@ -91,12 +91,13 @@ func (p *PostgresClient) GetValidatorAgreementRateBuckets(
 		  date_trunc($1, a.ledger_closed_at) AS time,
 		  a.master_key,
 		  vm.domain,
+		  vm.domain_verified,
 		  COUNT(*) FILTER (WHERE a.agreed)
 		FROM agreements a
 		LEFT JOIN validator_manifests vm ON a.master_key = vm.master_key
 		WHERE a.ledger_closed_at BETWEEN $2 AND $3
 		AND ($4 = FALSE OR vm.is_unl = TRUE)
-		GROUP BY date_trunc($1, a.ledger_closed_at), a.master_key, vm.domain
+		GROUP BY date_trunc($1, a.ledger_closed_at), a.master_key, vm.domain, vm.domain_verified
 		ORDER BY time;
 	`
 
@@ -113,22 +114,21 @@ func (p *PostgresClient) GetValidatorAgreementRateBuckets(
 	results := map[string]AgreementCounts{}
 	for rows.Next() {
 		var masterKey, domain string
+		var domainVerified bool
 		var row TimedInt
-		if err := rows.Scan(&row.Time, &masterKey, &domain, &row.Value); err != nil {
+		if err := rows.Scan(&row.Time, &masterKey, &domain, &domainVerified, &row.Value); err != nil {
 			return AgreementRatesData{}, fmt.Errorf("failed to scan row: %w", err)
 		}
 
 		if _, exists := results[masterKey]; !exists {
 			results[masterKey] = AgreementCounts{
-				MasterKey: masterKey,
-				Domain:    domain,
+				MasterKey:      masterKey,
+				Domain:         domain,
+				DomainVerified: domainVerified,
 			}
 		}
 
 		item := results[masterKey]
-		if item.Domain == "" && domain != "" {
-			item.Domain = domain
-		}
 		item.Agreement = append(item.Agreement, row)
 		results[masterKey] = item
 	}

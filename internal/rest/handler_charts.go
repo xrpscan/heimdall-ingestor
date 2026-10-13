@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"sort"
 	"strconv"
 	"time"
 
@@ -66,9 +67,19 @@ func (h *Handler) handleValidatorRating(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	type scoreDetails struct {
+		ValidatorDomain         string  `json:"validatorDomain"`
+		ValidatorMasterKey      string  `json:"validatorMasterKey"`
+		AgreementRate           float64 `json:"agreementRate"`
+		AgreementRateWeightage  float64 `json:"agreementRateWeightage"`
+		DomainVerified          bool    `json:"domainVerified"`
+		DomainVerifiedWeightage float64 `json:"domainVerifiedWeightage"`
+		Score                   float64 `json:"score"`
+	}
+
 	// Update score as per agreement rate.
-	scores := map[string]float64{}
-	for _, item := range data.AgreementCounts {
+	scores := make([]scoreDetails, len(data.AgreementCounts))
+	for i, item := range data.AgreementCounts {
 		// Defend against index-out-of-bounds.
 		if len(item.Agreement) == 0 {
 			continue
@@ -82,17 +93,29 @@ func (h *Handler) handleValidatorRating(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 
-		// Use domain if available, else master key.
-		key := item.Domain
-		if key == "" {
-			key = item.MasterKey
+		agreementRate := 100 * float64(v) / float64(lc)
+		// Here 0.8 represents an 80% weightage in the final score.
+		agreementRateWeightage := 0.8 * agreementRate
+		var domainVerifiedWeightage float64
+		if item.DomainVerified {
+			domainVerifiedWeightage = 20.0
 		}
 
 		// Update score.
-		scores[key] = float64(v) / float64(lc)
+		scores[i] = scoreDetails{
+			ValidatorDomain:         item.Domain,
+			ValidatorMasterKey:      item.MasterKey,
+			AgreementRate:           agreementRate,
+			AgreementRateWeightage:  agreementRateWeightage,
+			DomainVerified:          item.DomainVerified,
+			DomainVerifiedWeightage: domainVerifiedWeightage,
+			Score:                   agreementRateWeightage + domainVerifiedWeightage,
+		}
 	}
 
-	// TODO: Update score as per domain verification.
+	sort.SliceStable(scores, func(i, j int) bool {
+		return scores[i].Score > scores[j].Score
+	})
 
 	httputils.WriteJson(w, http.StatusOK, nil, scores)
 }
