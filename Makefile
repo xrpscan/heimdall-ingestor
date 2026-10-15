@@ -3,6 +3,8 @@ SHELL=/usr/bin/env bash
 application_name        = ingestor
 application_binary_name = ingestor
 
+database_dsn = postgres://postgres:dev@localhost:5432/heimdall?sslmode=disable
+
 # Support both podman and docker.
 DOCKER=$(shell which podman || which docker || echo 'docker')
 

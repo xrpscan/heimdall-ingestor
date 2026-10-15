@@ -8,6 +8,13 @@ import (
 
 // Config encapsulates all config required by the application.
 type Config struct {
+	Database struct {
+		Addr     string `json:"addr"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Database string `json:"database"`
+	} `json:"database"`
+
 	HttpServer struct {
 		Addr           string   `json:"addr"`
 		AllowedOrigins []string `json:"allowedOrigins"`
@@ -15,12 +22,38 @@ type Config struct {
 		CorsMaxAgeSec int `json:"corsMaxAgeSec"`
 	} `json:"httpServer"`
 
+	Kafka struct {
+		Brokers          []string `json:"brokers"`
+		Username         string   `json:"username"`
+		Password         string   `json:"password"`
+		CACertPath       string   `json:"caCertPath"`
+		ValidationsTopic string   `json:"validationsTopic"`
+		LedgerTopic      string   `json:"ledgerTopic"`
+		ConsumerGroupID  string   `json:"consumerGroupID"`
+
+		MaxMessageRetryCount   int `json:"maxMessageRetryCount"`
+		MessageRetryIntervalMs int `json:"messageRetryIntervalMs"`
+	} `json:"kafka"`
+
 	Logger struct {
 		// Leave empty for stdout logging.
 		FilePath string `json:"filePath"`
 		Level    string `json:"level"`
 		Pretty   bool   `json:"pretty"`
 	} `json:"logger"`
+
+	ManifestUpdater struct {
+		RunIntervalSec int `json:"runIntervalSec"`
+		MaxAgeSec      int `json:"maxAgeSec"`
+	} `json:"manifestUpdater"`
+
+	UNLSyncer struct {
+		RunIntervalSec int `json:"runIntervalSec"`
+	} `json:"unlSyncer"`
+
+	XRPL struct {
+		Addr string `json:"addr"`
+	} `json:"xrpl"`
 }
 
 // Load config from the given JSON file.
@@ -44,6 +77,19 @@ func Load(jsonPath string) (Config, error) {
 
 // validate the loaded config.
 func validate(conf Config) error {
+	if conf.Database.Addr == "" {
+		return fmt.Errorf("database.addr is required")
+	}
+	if conf.Database.Username == "" {
+		return fmt.Errorf("database.username is required")
+	}
+	if conf.Database.Password == "" {
+		return fmt.Errorf("database.password is required")
+	}
+	if conf.Database.Database == "" {
+		return fmt.Errorf("database.database is required")
+	}
+
 	if conf.HttpServer.Addr == "" {
 		return fmt.Errorf("httpServer.addr is required")
 	}
@@ -54,8 +100,42 @@ func validate(conf Config) error {
 		return fmt.Errorf("httpServer.corsMaxAgeSec is required")
 	}
 
+	if len(conf.Kafka.Brokers) == 0 {
+		return fmt.Errorf("kafka.brokers are required")
+	}
+	if conf.Kafka.ValidationsTopic == "" {
+		return fmt.Errorf("kafka.validationsTopic is required")
+	}
+	if conf.Kafka.LedgerTopic == "" {
+		return fmt.Errorf("kafka.ledgerTopic is required")
+	}
+	if conf.Kafka.ConsumerGroupID == "" {
+		return fmt.Errorf("kafka.consumerGroupID is required")
+	}
+	if conf.Kafka.MaxMessageRetryCount < 1 {
+		return fmt.Errorf("kafka.maxMessageRetryCount should be > 0")
+	}
+	if conf.Kafka.MessageRetryIntervalMs < 1 {
+		return fmt.Errorf("kafka.messageRetryIntervalMs should be > 0")
+	}
+
 	if conf.Logger.Level == "" {
 		return fmt.Errorf("logger.level is required")
+	}
+
+	if conf.ManifestUpdater.RunIntervalSec < 1 {
+		return fmt.Errorf("manifestUpdater.runIntervalSec should be > 0")
+	}
+	if conf.ManifestUpdater.MaxAgeSec < 1 {
+		return fmt.Errorf("manifestUpdater.maxAgeSec should be > 0")
+	}
+
+	if conf.UNLSyncer.RunIntervalSec < 1 {
+		return fmt.Errorf("unlSyncer.runIntervalSec should be > 0")
+	}
+
+	if conf.XRPL.Addr == "" {
+		return fmt.Errorf("xrpl.addr is required")
 	}
 
 	return nil
