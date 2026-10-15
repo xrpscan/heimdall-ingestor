@@ -16,10 +16,9 @@ import (
 
 // heatmapResponse is the response schema for the heatmap API.
 type heatmapResponse struct {
-	Data       [][3]any   `json:"data"`
-	XAxis      []string   `json:"xAxis"`
-	YAxis      []string   `json:"yAxis"`
-	Pagination pagination `json:"pagination"`
+	Data  [][3]any `json:"data"`
+	XAxis []string `json:"xAxis"`
+	YAxis []string `json:"yAxis"`
 }
 
 // pagination represents generic pagination details for any API response.
@@ -51,7 +50,7 @@ func (h *Handler) handleValidatorRating(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	options := store.ValidatorAgreementRateBucketOptions{
+	options := store.GetAllValidatorAgreementRateBucketsOptions{
 		// Use millenium so only one bucket is returned.
 		Bucket:    store.BucketMillennium,
 		StartTime: startTime,
@@ -60,7 +59,7 @@ func (h *Handler) handleValidatorRating(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Database call to fetch agreement counts and ledger counts.
-	data, err := h.database.GetValidatorAgreementRateBuckets(ctx, options)
+	data, err := h.database.GetAllValidatorAgreementRateBuckets(ctx, options)
 	if err != nil {
 		slog.ErrorContext(ctx, "error in GetValidatorAgreementRates call", "error", err)
 		httputils.WriteError(w, httputils.InternalServerError().WithReasonErr(err))
@@ -78,8 +77,8 @@ func (h *Handler) handleValidatorRating(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Update score as per agreement rate.
-	scores := make([]scoreDetails, len(data.AgreementCounts))
-	for i, item := range data.AgreementCounts {
+	scores := make([]scoreDetails, len(data.Validators))
+	for i, item := range data.Validators {
 		// Defend against index-out-of-bounds.
 		if len(item.Agreement) == 0 {
 			continue
@@ -120,6 +119,49 @@ func (h *Handler) handleValidatorRating(w http.ResponseWriter, r *http.Request) 
 	httputils.WriteJson(w, http.StatusOK, nil, scores)
 }
 
+func (h *Handler) handleValidatorAgmtRate(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Target validator.
+	masterKey := r.PathValue("validatorMasterKey")
+	if err := validateMasterKey(masterKey); err != nil {
+		slog.ErrorContext(ctx, "invalid master key", "error", err)
+		httputils.WriteError(w, httputils.BadRequest().WithReasonErr(err))
+		return
+	}
+
+	// Read query parameters.
+	// Note that due to there being only ~150 validators, this is not a paginated API,
+	// so limit and skip are not accepted.
+	q := r.URL.Query()
+	startTimeStr, endTimeStr, bucketStr := q.Get("startTime"), q.Get("endTime"), q.Get("bucket")
+
+	// Parse query parameters into concrete types.
+	heatmapOpts, err := parseHeatmapOptions(ctx, startTimeStr, endTimeStr, bucketStr, "false")
+	if err != nil {
+		slog.ErrorContext(ctx, "invalid query parameters", "error", err)
+		httputils.WriteError(w, httputils.BadRequest().WithReasonErr(err))
+		return
+	}
+
+	// Actual options struct required by the database method.
+	opts := store.GetValidatorAgreementRateBucketsOptions{
+		MasterKey: masterKey,
+		StartTime: heatmapOpts.StartTime,
+		EndTime:   heatmapOpts.EndTime,
+		Bucket:    heatmapOpts.Bucket,
+	}
+
+	data, err := h.database.GetValidatorAgreementRateBuckets(ctx, opts)
+	if err != nil {
+		slog.ErrorContext(ctx, "error in GetValidatorAgreementRateBuckets call", "error", err)
+		httputils.WriteError(w, httputils.InternalServerError().WithReasonErr(err))
+		return
+	}
+
+	httputils.WriteJson(w, http.StatusOK, nil, data)
+}
+
 func (h *Handler) handleValidatorAgmtHeatmap(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -139,7 +181,7 @@ func (h *Handler) handleValidatorAgmtHeatmap(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Database call to fetch agreement counts and ledger counts.
-	data, err := h.database.GetValidatorAgreementRateBuckets(ctx, options)
+	data, err := h.database.GetAllValidatorAgreementRateBuckets(ctx, options)
 	if err != nil {
 		slog.ErrorContext(ctx, "error in GetValidatorAgreementRates call", "error", err)
 		httputils.WriteError(w, httputils.InternalServerError().WithReasonErr(err))
@@ -148,11 +190,6 @@ func (h *Handler) handleValidatorAgmtHeatmap(w http.ResponseWriter, r *http.Requ
 
 	// Transform to ECharts format.
 	resp := transformAgreementRatesToHeatmap(data)
-	resp.Pagination = pagination{
-		// TODO: Confirm if this has any usage left.
-		TotalCount: data.TotalValidatorCount,
-	}
-
 	httputils.WriteJson(w, http.StatusOK, nil, resp)
 }
 
@@ -207,12 +244,12 @@ func transformLedgerIntervalsToChart(data []store.LedgerCloseInterval) ledgerClo
 // into a heatmap format that Apache ECharts can render.
 func transformAgreementRatesToHeatmap(data store.AgreementRatesData) heatmapResponse {
 	// Will hold all the validator domain/master-key.
-	yAxis := make([]string, len(data.AgreementCounts))
+	yAxis := make([]string, len(data.Validators))
 	// Required to pre-allocate the chart data slice.
 	var totalEntries int
 
 	// Populate yAxis with validator domain/master-key.
-	for i, item := range data.AgreementCounts {
+	for i, item := range data.Validators {
 		totalEntries += len(item.Agreement)
 
 		if item.Domain != "" {
@@ -243,7 +280,7 @@ func transformAgreementRatesToHeatmap(data store.AgreementRatesData) heatmapResp
 
 	// Transform each row to [xIndex, yIndex, value]
 	chartData := make([][3]any, 0, totalEntries)
-	for _, item := range data.AgreementCounts {
+	for _, item := range data.Validators {
 		// Index for the domain or the master-key.
 		yIdx, exists := validatorIndex[item.Domain]
 		if !exists {
@@ -299,10 +336,24 @@ func parseTimeRange(startTimeStr, endTimeStr string) (time.Time, time.Time, erro
 	return time.UnixMilli(parsedStartTime), time.UnixMilli(parsedEndTime), nil
 }
 
+// To validate user provided master keys.
+func validateMasterKey(mKey string) error {
+	if len(mKey) == 0 || len(mKey) > 53 {
+		return fmt.Errorf("master key length should be within [0, 53], but found: %d", len(mKey))
+	}
+
+	// XRPL validator master public keys commonly start with 'n'.
+	if mKey[0] != 'n' {
+		return fmt.Errorf("master key is malformed")
+	}
+
+	return nil
+}
+
 // parseRatingOptions parses and validates all query paramters of the validator rating API.
 // It also handles defaults.
 func parseRatingOptions(
-	ctx context.Context, startTimeStr, endTimeStr, unlOnlyStr string,
+	_ context.Context, startTimeStr, endTimeStr, unlOnlyStr string,
 ) (time.Time, time.Time, bool, error) {
 	if unlOnlyStr == "" {
 		unlOnlyStr = "false"
@@ -326,10 +377,10 @@ func parseRatingOptions(
 // It also handles defaults.
 func parseHeatmapOptions(
 	ctx context.Context, startTimeStr, endTimeStr, bucketStr, unlOnlyStr string,
-) (store.ValidatorAgreementRateBucketOptions, error) {
+) (store.GetAllValidatorAgreementRateBucketsOptions, error) {
 	startTime, endTime, unlOnly, err := parseRatingOptions(ctx, startTimeStr, endTimeStr, unlOnlyStr)
 	if err != nil {
-		return store.ValidatorAgreementRateBucketOptions{}, err
+		return store.GetAllValidatorAgreementRateBucketsOptions{}, err
 	}
 
 	// Default values for bucket.
@@ -356,11 +407,11 @@ func parseHeatmapOptions(
 	}
 
 	if !slices.Contains(store.AllBuckets(), store.Bucket(bucketStr)) {
-		return store.ValidatorAgreementRateBucketOptions{},
+		return store.GetAllValidatorAgreementRateBucketsOptions{},
 			fmt.Errorf("bucket is invalid, expected: %v", store.AllBuckets())
 	}
 
-	return store.ValidatorAgreementRateBucketOptions{
+	return store.GetAllValidatorAgreementRateBucketsOptions{
 		StartTime: startTime,
 		EndTime:   endTime,
 		Bucket:    store.Bucket(bucketStr),

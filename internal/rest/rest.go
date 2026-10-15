@@ -44,7 +44,8 @@ func (h *Handler) addRoutes() {
 	})
 
 	// Chart APIs.
-	mux.HandleFunc("GET /v1/charts/validator-agreemement-rate-heatmap", h.handleValidatorAgmtHeatmap)
+	mux.HandleFunc("GET /v1/charts/validator-agreement-rate-heatmap", h.handleValidatorAgmtHeatmap)
+	mux.HandleFunc("GET /v1/charts/{validatorMasterKey}/agreement-rate", h.handleValidatorAgmtRate)
 	mux.HandleFunc("GET /v1/charts/validator-rating", h.handleValidatorRating)
 	mux.HandleFunc("GET /v1/charts/ledger-close-interval", h.handleLedgerCloseInterval)
 }

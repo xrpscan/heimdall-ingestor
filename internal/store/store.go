@@ -31,24 +31,21 @@ type Client interface {
 	// master keys have is_unl set to TRUE and all remaining rows have it set to FALSE.
 	UpdateUNLValidators(ctx context.Context, masterKeys []string) error
 
-	// GetValidatorAgreementRateBuckets retrieves agreement rates for all validators
+	// GetAllValidatorAgreementRateBuckets retrieves agreement rates for all validators
+	// (active within the given time period), as per the given time bucket.
+	GetAllValidatorAgreementRateBuckets(
+		ctx context.Context, options GetAllValidatorAgreementRateBucketsOptions,
+	) (AgreementRatesData, error)
+
+	// GetValidatorAgreementRateBuckets retrieves agreement rates for a single validator
 	// (active within the given time period), as per the given time bucket.
 	GetValidatorAgreementRateBuckets(
-		ctx context.Context, options ValidatorAgreementRateBucketOptions,
-	) (AgreementRatesData, error)
+		ctx context.Context, options GetValidatorAgreementRateBucketsOptions,
+	) (AgreementRateData, error)
 
 	// GetLedgerCloseIntervals retrieves ledger close intervals (time between consecutive ledgers)
 	// for all ledgers within the given time range.
 	GetLedgerCloseIntervals(
 		ctx context.Context, startTime, endTime time.Time,
 	) ([]LedgerCloseInterval, error)
-}
-
-// ValidatorAgreementRateBucketOptions ...
-type ValidatorAgreementRateBucketOptions struct {
-	StartTime time.Time
-	EndTime   time.Time
-	Bucket    Bucket
-
-	UNLOnly bool
 }

@@ -70,22 +70,73 @@ func (p *PostgresClient) GetLedgerCount(
 }
 
 func (p *PostgresClient) GetValidatorAgreementRateBuckets(
-	ctx context.Context, options ValidatorAgreementRateBucketOptions,
-) (AgreementRatesData, error) {
-	// TODO: is this even needed anymore?
-	totalCount, err := p.GetValidatorCount(ctx, options.StartTime, options.EndTime, options.UNLOnly)
+	ctx context.Context, options GetValidatorAgreementRateBucketsOptions,
+) (AgreementRateData, error) {
+	// Required to calculate agreement percentages.
+	ledgerCounts, err := p.GetLedgerCount(ctx, options.StartTime, options.EndTime, options.Bucket)
 	if err != nil {
-		return AgreementRatesData{}, fmt.Errorf("failed to get total count: %w", err)
+		return AgreementRateData{}, fmt.Errorf("failed to get ledger counts: %w", err)
 	}
 
+	query := `
+		SELECT
+		  date_trunc($1, a.ledger_closed_at) AS time,
+		  vm.domain,
+		  vm.domain_verified,
+		  COUNT(*) FILTER (WHERE a.agreed)
+		FROM agreements a
+		LEFT JOIN validator_manifests vm ON a.master_key = vm.master_key
+		WHERE a.ledger_closed_at BETWEEN $2 AND $3
+		AND a.master_key = $4
+		GROUP BY date_trunc($1, a.ledger_closed_at), a.master_key, vm.domain, vm.domain_verified
+		ORDER BY time;
+	`
+
+	// Execute query.
+	rows, err := p.db.QueryContext(ctx, query, string(options.Bucket),
+		options.StartTime, options.EndTime, options.MasterKey)
+	if err != nil {
+		return AgreementRateData{}, fmt.Errorf("error in QueryContext call: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	// Decode results.
+	var results ValidatorAgreementCounts
+	results.MasterKey = options.MasterKey
+
+	for rows.Next() {
+		var domain string
+		var domainVerified bool
+		var row TimedInt
+		if err := rows.Scan(&row.Time, &domain, &domainVerified, &row.Value); err != nil {
+			return AgreementRateData{}, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		results.Agreement = append(results.Agreement, row)
+		results.Domain = domain
+		results.DomainVerified = domainVerified
+	}
+
+	if err := rows.Err(); err != nil {
+		return AgreementRateData{}, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	return AgreementRateData{
+		Validator:    results,
+		LedgerCounts: ledgerCounts,
+	}, nil
+}
+
+func (p *PostgresClient) GetAllValidatorAgreementRateBuckets(
+	ctx context.Context, options GetAllValidatorAgreementRateBucketsOptions,
+) (AgreementRatesData, error) {
 	// Required to calculate agreement percentages.
 	ledgerCounts, err := p.GetLedgerCount(ctx, options.StartTime, options.EndTime, options.Bucket)
 	if err != nil {
 		return AgreementRatesData{}, fmt.Errorf("failed to get ledger counts: %w", err)
 	}
 
-	// This query yields the list of agreement rates (in %) for every minute, for every validator,
-	// within the given time range.
 	query := `
 		SELECT
 		  date_trunc($1, a.ledger_closed_at) AS time,
@@ -111,7 +162,7 @@ func (p *PostgresClient) GetValidatorAgreementRateBuckets(
 	defer func() { _ = rows.Close() }()
 
 	// Decode results.
-	results := map[string]AgreementCounts{}
+	results := map[string]ValidatorAgreementCounts{}
 	for rows.Next() {
 		var masterKey, domain string
 		var domainVerified bool
@@ -121,7 +172,7 @@ func (p *PostgresClient) GetValidatorAgreementRateBuckets(
 		}
 
 		if _, exists := results[masterKey]; !exists {
-			results[masterKey] = AgreementCounts{
+			results[masterKey] = ValidatorAgreementCounts{
 				MasterKey:      masterKey,
 				Domain:         domain,
 				DomainVerified: domainVerified,
@@ -146,20 +197,19 @@ func (p *PostgresClient) GetValidatorAgreementRateBuckets(
 	}
 
 	// The slice that will be sorted (currently unsorted).
-	counts := make([]AgreementCounts, 0, len(results))
+	counts := make([]ValidatorAgreementCounts, 0, len(results))
 	for _, data := range results {
 		counts = append(counts, data)
 	}
 
 	// Sort as per validator performance.
-	slices.SortStableFunc(counts, func(a AgreementCounts, b AgreementCounts) int {
+	slices.SortStableFunc(counts, func(a ValidatorAgreementCounts, b ValidatorAgreementCounts) int {
 		return agreementCount[b.MasterKey] - agreementCount[a.MasterKey]
 	})
 
 	return AgreementRatesData{
-		AgreementCounts:     counts,
-		LedgerCounts:        ledgerCounts,
-		TotalValidatorCount: totalCount,
+		Validators:   counts,
+		LedgerCounts: ledgerCounts,
 	}, nil
 }
 

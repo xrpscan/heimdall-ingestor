@@ -182,18 +182,24 @@ type ValidatorManifest struct {
 	UpdatedAt      Timestamp
 }
 
-// AgreementRatesData represents validator agreement rate data with total count for pagination.
+// AgreementRatesData contains agreement counts for multiple validators along with ledger counts
+// for agreement rate calculation.
 type AgreementRatesData struct {
 	// Each item in this slice represents one validator.
 	// So, total size is equal to total validator count.
-	AgreementCounts []AgreementCounts
-	LedgerCounts    map[time.Time]int
-	// For pagination since the GetValidatorAgreementHeatmap allows pagination on validators.
-	TotalValidatorCount uint
+	Validators   []ValidatorAgreementCounts
+	LedgerCounts map[time.Time]int
 }
 
-// AgreementCounts shows the agreement rate of a validator over time.
-type AgreementCounts struct {
+// AgreementRateData contains agreement counts for one validator along with ledger counts
+// for agreement rate calculation.
+type AgreementRateData struct {
+	Validator    ValidatorAgreementCounts
+	LedgerCounts map[time.Time]int
+}
+
+// ValidatorAgreementCounts shows the agreement rate of a validator over time.
+type ValidatorAgreementCounts struct {
 	MasterKey      string
 	Domain         string
 	DomainVerified bool
@@ -210,4 +216,21 @@ type LedgerCloseInterval struct {
 	Time            time.Time
 	IntervalSeconds float64 // seconds between this ledger and the previous one
 	LedgerIndex     int64
+}
+
+// GetAllValidatorAgreementRateBucketsOptions ...
+type GetAllValidatorAgreementRateBucketsOptions struct {
+	StartTime time.Time
+	EndTime   time.Time
+	Bucket    Bucket
+
+	UNLOnly bool
+}
+
+// GetValidatorAgreementRateBucketsOptions ...
+type GetValidatorAgreementRateBucketsOptions struct {
+	MasterKey string
+	StartTime time.Time
+	EndTime   time.Time
+	Bucket    Bucket
 }
