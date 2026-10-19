@@ -79,11 +79,12 @@ Authentication is optional: if `username` and `password` are provided, the consu
 
 ### 2. Manifest Updater
 
-Periodically fetches validator manifest data (domain, signing keys) from an XRPL node via the `manifest` RPC method. Validators are registered dynamically as they appear in incoming Kafka validation messages.
+Periodically fetches validator manifest data (domain, signing keys) from an XRPL node via the `manifest` RPC method, and verifies validator domain ownership. Validators are registered dynamically as they appear in incoming Kafka validation messages.
 
 - Runs every `manifestUpdater.runIntervalSec` seconds.
 - Only fetches manifests for validators whose last update is older than `manifestUpdater.maxAgeSec` seconds.
 - Fetches are parallelized with a concurrency limit of 20 simultaneous XRPL requests.
+- **Domain verification**: For each validator with a domain, fetches the TOML file at `https://{domain}/.well-known/xrp-ledger.toml` and verifies the validator's master public key is listed. Sets the `domain_verified` flag accordingly.
 - Results are upserted into the `validator_manifests` table.
 
 ### 3. UNL Syncer
@@ -96,11 +97,47 @@ Periodically polls the XRPL Foundation's validator list at https://unl.xrplf.org
 
 ### 4. HTTP Server
 
-Exposes a REST API for health checking. Currently serves a single endpoint:
+Exposes a REST API for health checking and validator analytics. The server includes recovery, access logging, CORS, and body size limit (16 KB) middleware.
+
+#### Endpoints
+
+**Health Check**
 
 - `GET /healthz` — returns `{"code": "OK"}` with a 200 status.
 
-The server includes recovery, access logging, CORS, and body size limit (16 KB) middleware.
+**Chart APIs**
+
+All chart endpoints accept time parameters as Unix timestamps in milliseconds. If not provided, `startTime` defaults to 24 hours ago and `endTime` defaults to now.
+
+- `GET /v1/charts/validator-agreement-rate-heatmap` — Returns validator agreement rates in heatmap format for Apache ECharts visualization.
+  - Query parameters:
+    - `startTime` (optional) — Unix timestamp in milliseconds
+    - `endTime` (optional) — Unix timestamp in milliseconds
+    - `bucket` (optional) — Time bucket size: `minute`, `hour`, `day`, `week`, `month`, `quarter`, `year`, `millennium`. Auto-calculated based on time range if not provided.
+    - `unlOnly` (optional) — `true` to filter only UNL validators, defaults to `false`
+  - Returns: `{data: [[xIndex, yIndex, agreementPercent]], xAxis: [times], yAxis: [validators]}`
+
+- `GET /v1/charts/{validatorMasterKey}/agreement-rate` — Returns agreement rate time series for a single validator.
+  - Path parameters:
+    - `validatorMasterKey` — Validator's master public key (base58, starts with 'n')
+  - Query parameters:
+    - `startTime` (optional) — Unix timestamp in milliseconds
+    - `endTime` (optional) — Unix timestamp in milliseconds
+    - `bucket` (optional) — Time bucket size (same options as heatmap)
+  - Returns: Agreement rate bucketed by time
+
+- `GET /v1/charts/validator-rating` — Computes validator scores based on agreement rate (80% weight) and domain verification (20% weight).
+  - Query parameters:
+    - `startTime` (optional) — Unix timestamp in milliseconds
+    - `endTime` (optional) — Unix timestamp in milliseconds
+    - `unlOnly` (optional) — `true` to filter only UNL validators, defaults to `false`
+  - Returns: Array of validators sorted by score descending
+
+- `GET /v1/charts/ledger-close-interval` — Returns time series of ledger close intervals for monitoring network performance.
+  - Query parameters:
+    - `startTime` (optional) — Unix timestamp in milliseconds
+    - `endTime` (optional) — Unix timestamp in milliseconds
+  - Returns: `{times: [timestamps], intervals: [seconds], ledgerIndices: [indices]}`
 
 ## Configuration
 
